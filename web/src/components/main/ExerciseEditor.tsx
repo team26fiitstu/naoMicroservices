@@ -855,6 +855,7 @@ function FrameCard({
   const [toggleText, setTextToggle] = useState(false);
   const [naoSaying, setNaoSaying] = useState(false);
   const noExtractedText = "Nothing so far";
+  const textAreaRef = useRef<any>(null);
   const [overallRecordedMessage, onOverallRecordedMessageChange] = useState({"extractedText": noExtractedText});
   const [savingAt, setSavingVoiceLinesAt]  = useState<number | null>(null);
   const [speechLanguage, setSpeechLanguage] = useState<string>("English");
@@ -878,6 +879,11 @@ function FrameCard({
 
   const extractText = (overallMessages: any) => {
     let resultingText = "";
+    console.log(overallMessages);
+    if (overallMessages["extractedText"] !== undefined && overallMessages["extractedText"] !== "Nothing so far") {
+      console.log(overallMessages["extractedText"]);
+      return overallMessages["extractedText"];
+    }
     if (overallMessages["voice_lines_configs"] !== undefined) {
       for (const [key, value] of Object.entries(overallMessages["voice_lines_configs"])) {
           if (value["translation"] !== undefined) { 
@@ -885,6 +891,7 @@ function FrameCard({
           }
       }
     }
+    
     return resultingText;
   }
 
@@ -903,13 +910,14 @@ function FrameCard({
             throw new Error("Message not in JSON");
           })
           .then((data) => {
-            if (extractText(data) !== "") {
-                for (const [key, value] of Object.entries(data["voice_lines_configs"])) {
+            const extractededText = extractText(data);
+            if  ( extractededText !== "") {
+                /*for (const [key, value] of Object.entries(data["voice_lines_configs"])) {
                   if (overallRecordedMessage["voice_lines_configs"] === undefined) {
                       overallRecordedMessage["voice_lines_configs"] = {};
                   }
                   overallRecordedMessage["voice_lines_configs"][key] = value;
-                }
+                }*/
                 console.log("LODED.........................................");
                 console.log(data);
                 if (data["lang"] !== undefined) {
@@ -921,7 +929,8 @@ function FrameCard({
                    setSpeechSpeed(data["speed"]);
                 }
 
-                overallRecordedMessage["extractedText"] = extractText(data);
+                overallRecordedMessage["extractedText"] = extractededText;
+                aggregatedVoiceLinesRef.current.value = overallRecordedMessage["extractedText"];
                 onOverallRecordedMessageChange(overallRecordedMessage);
             } 
           })
@@ -1190,7 +1199,7 @@ function FrameCard({
               <textarea ref={aggregatedVoiceLinesRef} style={{width: "100%", height: "100px", border: "1px solid black", borderRadius: "25px",
                  padding: "30px 30px 30px 30px"}} name="textFromVideo" 
                  onChange={(e) => {overallRecordedMessage["extractedText"] = e.target.value; onOverallRecordedMessageChange(overallRecordedMessage); }}>
-                  {extractText(overallRecordedMessage) === ""?  overallRecordedMessage["extractedText"] : extractText(overallRecordedMessage)}
+                  {overallRecordedMessage["extractedText"]}
               </textarea>
               <div className="flex items-center gap-2" style={{"margin": "10px 10px 10px 10px"}}>
                 <button
