@@ -28,16 +28,28 @@ def set_voice_lines(voice_lines_config):
 
     lang = voice_lines_config["lang"] if "lang" in voice_lines_config else "English"
     lang = "English" if not lang else lang
-    if "voice_lines_configs" in voice_lines_config:
-        for _, voice_line_config in voice_lines_config["voice_lines_configs"].items():
-            if "wait" in voice_line_config and voice_line_config["wait"]:
-                time.sleep(float(voice_line_config["wait"]))
-            text = unicode(voice_line_config["translation"]).encode('utf8', 'replace')
-            try:
-                g.speech_proxy.say("" + text, lang)
-            except:
-                lang = lang.encode('utf8', 'replace')
-                g.speech_proxy.say(voice_line_config["translation"].encode('utf8', 'replace'), lang)
+
+    if voice_lines_config and "extractedText" in voice_lines_config and "Nothing so far" not in voice_lines_config["extractedText"]:
+        if "wait" in voice_lines_config and voice_lines_config["wait"]:
+            time.sleep(float(voice_lines_config["wait"]))
+        text = unicode(voice_lines_config["extractedText"]).encode('utf8', 'replace')
+        try:
+            g.speech_proxy.say("" + text, lang)
+        except:
+            lang = lang.encode('utf8', 'replace')
+            g.speech_proxy.say(voice_lines_config["extractedText"].encode('utf8', 'replace'), lang)
     else:
-        print("Voice lines are not available in config")
+        # one time to say
+        if "voice_lines_configs" in voice_lines_config:
+            for _, voice_line_config in voice_lines_config["voice_lines_configs"].items():
+                if "wait" in voice_line_config and voice_line_config["wait"]:
+                    time.sleep(float(voice_line_config["wait"]))
+                text = unicode(voice_line_config["translation"]).encode('utf8', 'replace')
+                try:
+                    g.speech_proxy.say("" + text, lang)
+                except:
+                    lang = lang.encode('utf8', 'replace')
+                    g.speech_proxy.say(voice_line_config["translation"].encode('utf8', 'replace'), lang)
+        else:
+            print("Voice lines are not available in config")
  
