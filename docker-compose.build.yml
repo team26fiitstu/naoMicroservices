@@ -5,12 +5,6 @@ services:
       dockerfile: Dockerfile
     image: ${REGISTRY:-berserkchmonya}/web:${TAG:-latest}
 
-  team19-web:
-    build:
-      context: ./team-19-web
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/team19-web:${TAG:-latest}
-
   nao-robot-api:
     build:
       context: ./team-19-social-robot/naoRobotAPI

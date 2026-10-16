@@ -1,4 +1,4 @@
-import { AudioRecorderComponent } from "@/components/ui/AudioRecorder";
+import { AudioRecorderComponent } from "@/components/ui/audioRecorder";
 
 export default function AudioRecorderAggregatorPage() {
   const [overallRecordedMessage, onOverallRecordedMessageChange] = useState({});

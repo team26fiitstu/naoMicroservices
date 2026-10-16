@@ -15,9 +15,14 @@ import os
 from typing import Dict, Any, List
 
 import requests
-
-#POSE_FROM_VIDEO_URL = "http://skeletonFinderAPI:6001/media_pipe_pose/pose_from_video"
-POSE_FROM_VIDEO_URL = "http://localhost:6001/media_pipe_pose/pose_from_video"
+NO_NAMING = os.environ.get('NO_NAMING', True)
+print(NO_NAMING)
+print("NOOOO NAMING")
+if NO_NAMING:
+    POSE_FROM_VIDEO_URL = "http://localhost:6001/media_pipe_pose/pose_from_video"
+else:
+    POSE_FROM_VIDEO_URL = "http://skeletonFinderAPI:6001/media_pipe_pose/pose_from_video"
+#POSE_FROM_VIDEO_URL = "http://localhost:6001/media_pipe_pose/pose_from_video"
 
 REQUIRED_JOINTS = [
     "Left shoulder",

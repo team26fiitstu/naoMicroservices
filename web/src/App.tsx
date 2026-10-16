@@ -6,7 +6,7 @@ import GroupPage from "./pages/groupPage";
 import ExercisesStore from "./pages/exercisesStore";
 import SimpleUploadPage from "./pages/simpleUploadPage";
 import VoiceCommandPage from "./pages/voiceCommandPage";
-import AudioRecorderAggregatorPage from "./pages/AudioRecorderAggregatorPage";
+import AudioRecorderAggregatorPage from "./pages/audioRecorderAggregatorPage";
 import { SideNav } from "./components/layout/sideNav";
 import { BottomNav } from "./components/layout/bottomNav";
 

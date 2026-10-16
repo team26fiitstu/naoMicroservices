@@ -4,11 +4,12 @@ import { standardButtonColor, standardButtonHeight, secondaryButtonColor} from "
 import { Button } from "@/components/ui/button";
 import { Trash2, Loader2, Pickaxe, ArrowRight } from "lucide-react";
 
-const LOCAL = true; 
+const NO_NAMING = true; 
 // ── API config ────────────────────────────────────────────────────
-const TO_TEXT_API = LOCAL? "http://localhost:9901" : "";
+const TO_TEXT_API = NO_NAMING? "http://localhost:9901" : "";
 
-
+console.log(process.env.HOST_DOCKER_INTERNAL);
+console.log(process.env);
 export function CustomAudioPlayer({url, keyID, index, blob, defaultText,
                             overallRecordedMessage, onOverallRecordedMessageChange, 
                             saveAudioFile, languageVoice, speedVoice, aggregatedVoiceLinesRef}) {

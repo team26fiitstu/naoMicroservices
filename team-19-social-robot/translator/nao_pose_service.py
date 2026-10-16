@@ -28,8 +28,8 @@ load_dotenv()
 # CONFIG
 # =========================
 
-LOCAL = os.environ.get('LOCAL', True)
-if LOCAL:
+NO_NAMING = os.environ.get('NO_NAMING', True)
+if NO_NAMING:
     POSE_API_URL = "http://localhost:6001/media_pipe_pose/pose_from_image"
     SET_POSE_URL = "http://localhost:5000/setting_pose/setPose"
     VOICE_LINES_URL = "http://localhost:5000/voiceLines/applyVoiceLine"
@@ -37,6 +37,7 @@ if LOCAL:
 else:
     POSE_API_URL = "http://skeletonfinderapi:6001/media_pipe_pose/pose_from_image"
     SET_POSE_URL = "http://naorobotapi:5000/setting_pose/setPose"
+    VOICE_LINES_URL = "http://naorobotapi:5000/voiceLines/applyVoiceLine"
     EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://exerciseconfigservice:7001")
 
 # Host directory mounted into pose container as /images

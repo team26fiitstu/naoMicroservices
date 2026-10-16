@@ -24,8 +24,8 @@ from app.storage import (
 from dotenv import load_dotenv
 
 load_dotenv()
-LOCAL = os.environ.get('LOCAL', True)
-if LOCAL:
+NO_NAMING = os.environ.get('NO_NAMING', True)
+if NO_NAMING:
     VOICE_COMMAND_API_URL = os.environ.get("VOICE_COMMAND_API_URL", "http://localhost:8000")
 else:
     VOICE_COMMAND_API_URL = os.environ.get("VOICE_COMMAND_API_URL", "http://voicecommandapi:8000")

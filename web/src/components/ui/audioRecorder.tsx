@@ -96,6 +96,8 @@ const AudioRecorderComponent = React.forwardRef((props, ref) => {
 
     function createCustomAudioPlayer(url, blob, defaultText) {
         const playerIdentifier = crypto.randomUUID().substring(0, 8);
+        console.log(url);
+        console.log(blob);
         const newElement = {id: playerIdentifier, data:<CustomAudioPlayer
             index={inputList.length}  url={url} keyID={playerIdentifier} key={playerIdentifier} blob={blob} 
             overallRecordedMessage={overallRecordedMessage} defaultText={defaultText}

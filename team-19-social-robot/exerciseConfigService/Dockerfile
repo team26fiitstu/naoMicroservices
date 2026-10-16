@@ -13,6 +13,8 @@ COPY . .
 # exercises folder lives inside the service — no volume mount needed
 RUN mkdir -p /service/exercises
 
+ENV NO_NAMING $NO_NAMING
+
 EXPOSE 7001
 
 # Use gunicorn in production, not Flask dev server
