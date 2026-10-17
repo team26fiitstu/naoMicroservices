@@ -4,11 +4,15 @@
 
 ```REGISTRY=jperdek```  
 
+ - pull:
+
+``` docker compose -f docker-compose.dev.yml pull```
+
  - run:  
 
 ```docker compose -f docker-compose.dev.yml up```  
 
- - build and run:  
+ - [ALTERNATIVE] build and run:  
 
 ```docker compose -f docker-compose.dev.yml up --build```  
 
