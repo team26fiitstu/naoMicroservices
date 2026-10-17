@@ -1,3 +1,17 @@
+# Docker compose orchestration (without command API connected to LLM)
+
+ - set resource location pointing to Docker Hub in .env file:  
+
+```REGISTRY=jperdek```  
+
+ - run:  
+
+```docker compose -f docker-compose.dev.yml up```  
+
+ - build and run:  
+
+```docker compose -f docker-compose.dev.yml up --build```  
+
 
 # Robot configuration
 
