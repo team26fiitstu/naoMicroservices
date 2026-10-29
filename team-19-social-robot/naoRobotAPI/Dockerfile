@@ -16,10 +16,9 @@ RUN mkdir pynaoqi
 COPY ./pynaoqi /pynaoqi
 #COPY ./pynaoqi /usr/local/lib/python2.7/
 COPY . /naoRobotAPI
-ENV PYTHONPATH=${PYTHONPATH}:/pynaoqi
+ENV PYTHONPATH="/pynaoqi:${PYTHONPATH}"
 
 WORKDIR /naoRobotAPI
-RUN ./.bashrc
 #RUN apt-get -y update
 RUN apt-get install -y python-simplegeneric
 
