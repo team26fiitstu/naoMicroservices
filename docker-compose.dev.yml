@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
-    image: ${REGISTRY:-berserkchmonya}/web:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
     container_name: web_dev
     ports:
       - "8090:80"
@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/nao-robot-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
     command: python server.py
     container_name: naorobotapi
     env_file: ./team-19-social-robot/.env
@@ -36,7 +36,7 @@ services:
       HOST_PORT: ${HOST_PORT:-1234}
       HOST_IP: ${HOST_IP:-127.0.0.1}
       NAO_PORT: ${NAO_PORT:-9559}
-      NAO_IP: host.docker.internal
+      NAO_IP: ${NAO_IP:-host.docker.internal}
       FLASK_ENV: development
     networks:
       - appnet
@@ -49,7 +49,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/skeleton-finder-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
     command: python server.py
     container_name: skeletonfinderapi
     env_file: ./team-19-social-robot/.env
@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/translator:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     container_name: translatorapi
     env_file: ./team-19-social-robot/.env
@@ -95,7 +95,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/voice-command-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
     container_name: voicecommandapi
     ports:
       - "8000:8000"
@@ -116,7 +116,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/exercise-config-service:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
     command: python run.py
     container_name: exerciseconfigservice
     env_file: ./team-19-social-robot/.env
@@ -139,7 +139,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-berserkchmonya}/audio-to-text-converter:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/audio-to-text-converter:${TAG:-latest}
     command: python text_from_audio_extractor_service.py
     container_name: audiototextconverter
     env_file: ./team-19-social-robot/.env
