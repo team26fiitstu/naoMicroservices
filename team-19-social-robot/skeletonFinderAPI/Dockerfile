@@ -1,18 +1,25 @@
 FROM python:3.12-slim
-COPY ./server /python-flask
 
-COPY ./requirements.txt /python-flask
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# shared libraries required by OpenCV
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /python-flask
 
-RUN apt-get -y update
+COPY requirements.txt .
 
-RUN apt-get install -y wget ffmpeg libsm6 libxext6 libgl1
+# PyTorch comes from the CPU-only index, without CUDA libraries
+RUN grep -E '^torch(vision)?==' requirements.txt \
+        | xargs pip install --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt
 
-RUN pip install --timeout 120 --retries 5 -r requirements.txt
+ADD https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6-pose.pt .
 
-RUN wget https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6-pose.pt
-
-ENV NO_NAMING $NO_NAMING
+COPY server .
 
 CMD [ "python", "server.py" ]

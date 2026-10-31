@@ -1,0 +1,6 @@
+.venv
+.idea
+**/__pycache__
+documentation
+test
+*.postman_collection.json

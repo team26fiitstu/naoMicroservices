@@ -1,24 +1,26 @@
 FROM python:3.11-slim
 
-# Working directory inside the container
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# ffmpeg decodes incoming audio for whisperx
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /service
-RUN apt-get -y update
-RUN apt-get -y upgrade
-RUN apt-get install -y ffmpeg
 
-# Install dependencies first (Docker layer cache — only re-runs if requirements.txt changes)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# PyTorch comes from the CPU-only index, without CUDA libraries
+RUN grep -E '^torch(vision|audio)?==' requirements.txt \
+        | xargs pip install --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt \
+    && pip uninstall -y triton
+
 COPY . .
-
-# exercises folder lives inside the service — no volume mount needed
-#RUN mkdir -p /service/exercises
-
-ENV NO_NAMING $NO_NAMING
 
 EXPOSE 9901
 
-# Use gunicorn in production, not Flask dev server
-CMD ["gunicorn", "--bind", "0.0.0.0:9901", "--workers", "2", "--timeout", "120", "run:app"]
+CMD ["python", "text_from_audio_extractor_service.py"]
