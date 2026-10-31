@@ -1,8 +1,8 @@
 # Docker compose orchestration (without command API connected to LLM)
 
- - set resource location pointing to Docker Hub in .env file:  
+ - create .env:  
 
-```REGISTRY=jperdek```  
+```cp .env.example .env```  
 
  - pull:
 
@@ -19,22 +19,27 @@
 
 # Robot configuration
 
-## Remote run
-Set NAO_IP in ```./team-19-social-robot/naoRobotAPI/.env``` to robot IP (NAO robot should be on the same Wifi if not then configure it using ethernet cable):
+Set NAO_IP and NAO_PORT in ```./.env``` (without Docker in ```./team-19-social-robot/naoRobotAPI/.env```).
 
-```NAO_IP=10.62.44.100```
-```NAO_PORT=9559```
-```HOST_IP=127.0.0.1```
-```HOST_PORT=1234```
+Real robot:
 
+```
+NAO_IP=10.62.44.100
+NAO_PORT=9561
+```
 
-## Local run (choregraphe)
-Set NAO_IP in ```./team-19-social-robot/naoRobotAPI/.env``` to localhost
+Choregraphe:
 
-```NAO_IP=127.0.0.1```
-```NAO_PORT=9559```
-```HOST_IP=127.0.0.1```
-```HOST_PORT=1234``` 
+```
+NAO_IP=host.docker.internal
+NAO_PORT=9559
+```
+
+Without Docker use ```NAO_IP=127.0.0.1``` for Choregraphe.
+
+Apply changes:
+
+```docker compose -f docker-compose.dev.yml up -d naorobotapi```
 
 
 

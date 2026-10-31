@@ -3,34 +3,34 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/web:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
 
   nao-robot-api:
     build:
       context: ./team-19-social-robot/naoRobotAPI
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/nao-robot-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
 
   skeleton-finder-api:
     build:
       context: ./team-19-social-robot/skeletonFinderAPI
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/skeleton-finder-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
 
   translator:
     build:
       context: ./team-19-social-robot/translator
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/translator:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
 
   voice-command-api:
     build:
       context: ./team-19-social-robot/voiceCommandAPI
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/voice-command-api:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
 
   exercise-config-service:
     build:
       context: ./team-19-social-robot/exerciseConfigService
       dockerfile: Dockerfile
-    image: ${REGISTRY:-berserkchmonya}/exercise-config-service:${TAG:-latest}
+    image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
