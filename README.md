@@ -58,7 +58,7 @@ On Windows PowerShell, load `.env` into the environment before launching service
 | `NAO_PORT` | `9559` | NAOqi port for Choregraphe or a real robot. |
 | `POSE_IMAGES_HOST_DIR` | `./data/pose-images` | Host directory mounted at `/images` by Compose. |
 | `EXERCISES_HOST_DIR` | `./data/exercises` | Host directory mounted at `/service/exercises` by Compose. |
-| `REGISTRY` | `berserkchmonya` | Prefix for Compose image tags. |
+| `REGISTRY` | `jperdek` | Prefix for Compose image tags. |
 | `TAG` | `latest` | Compose image tag. |
 
 Optional service overrides: `POSE_API_URL` defaults to `http://<pose-host>:6001/media_pipe_pose/pose_from_image`; `POSE_FROM_VIDEO_URL` uses the corresponding `/pose_from_video`; `SET_POSE_URL` and `NAO_SET_POSE_URL` default to `http://<robot-host>:5000/setting_pose/setPose`; `VOICE_LINES_URL` uses `/voiceLines/applyVoiceLine`; `EXERCISE_CONFIG_URL` defaults to `http://<exercise-host>:7001`; `VOICE_COMMAND_API_URL` defaults to `http://<voice-host>:8000`. Hosts are `localhost` in local mode and `skeletonfinderapi`, `naorobotapi`, `exerciseconfigservice`, or `voicecommandapi` in Compose. `EXERCISES_DIR` defaults to `./data/exercises` locally and is set to `/service/exercises` by Compose. `POSE_HOST_ROOT` and `POSE_CONT_ROOT` default to `./data/pose-images` locally and `/images` in Compose. Set URL overrides only when using a custom network layout.
