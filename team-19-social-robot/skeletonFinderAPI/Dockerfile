@@ -15,7 +15,7 @@ COPY requirements.txt .
 
 # PyTorch comes from the CPU-only index, without CUDA libraries
 RUN grep -E '^torch(vision)?==' requirements.txt \
-        | xargs pip install --index-url https://download.pytorch.org/whl/cpu \
+        | xargs pip install --timeout 180 --retries 5 --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r requirements.txt
 
 ADD https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6-pose.pt .
