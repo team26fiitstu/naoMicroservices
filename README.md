@@ -20,7 +20,16 @@ docker compose -f docker-compose.dev.yml ps
 
 Open <http://localhost:8090>. API ports are 5000 (NAO), 6001 (pose), 7000 (translator), 7001 (exercise configuration), 8000 (voice commands), and 9901 (audio transcription). Check `curl http://localhost:8000/commands` and `curl http://localhost:7001/health` before sending robot commands. Stop with `docker compose -f docker-compose.dev.yml down`.
 
-For Apple Silicon, use `docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml up --build -d` (Compose 2.24.4+). The Mac override changes the NAO and translator host ports to 15000 and 17000. See the [macOS NAO checklist](docs/nao-macos-setup.md) for the robot connection steps. The older three-service Compose file is available with `docker compose --env-file .env --project-directory . -f team-19-social-robot/docker-compose.yml up --build`; use the root `.env` there too.
+For Apple Silicon (Compose 2.24.4+), start and check the complete stack with:
+
+```sh
+docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml up --build -d
+docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml ps
+curl http://localhost:8000/commands
+curl http://localhost:7001/health
+```
+
+Open <http://localhost:8090>. The Mac override changes the NAO and translator host ports to 15000 and 17000 and runs the NAO and audio containers as `linux/amd64` under emulation. The first build downloads large Python packages and a pose model. To stop all services, run `docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml down`. See the [macOS NAO checklist](docs/nao-macos-setup.md) for the robot connection steps. The older three-service Compose file is available with `docker compose --env-file .env --project-directory . -f team-19-social-robot/docker-compose.yml up --build`; use the root `.env` there too.
 
 ## Local processes without Docker
 

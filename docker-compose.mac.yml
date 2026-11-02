@@ -40,6 +40,7 @@ services:
       - ./data/exercises:/service/exercises
 
   audio-to-text-converter:
+    platform: linux/amd64
     ports: !override
       - "127.0.0.1:9901:9901"
     volumes: !override

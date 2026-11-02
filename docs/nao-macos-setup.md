@@ -21,28 +21,29 @@ Official software documentation: <https://doc.aldebaran.com/>.
 
 Install the Choregraphe version matching the actual NAOqi generation. In Choregraphe, use **Connect to** → enter the newly announced IP and port `9559` → connect. The screenshots in the presentation were made on Windows; menus can differ on macOS. An older Intel-only Choregraphe build may need Rosetta on Apple Silicon, and compatibility with macOS 26 must be verified with that specific build. If it cannot run, use a supported Intel Mac or Windows machine for Choregraphe while keeping the Mac for the other services.
 
-## 4. Local microservices without the robot
+## 4. Full Docker Compose stack
 
-From the repository root, pass **both** Compose files in this order. The base file keeps its original Linux/Windows ports and paths; `docker-compose.mac.yml` applies Apple Silicon settings only to these commands. Docker Compose 2.24.4 or newer is required for the override file.
+From the repository root, pass **both** Compose files in this order. The base file keeps its original Linux/Windows ports and paths; `docker-compose.mac.yml` applies Apple Silicon settings only to these commands. Docker Compose 2.24.4 or newer is required for the override file. If this is the first run, copy `.env.example` to `.env` and create the data directories as shown in the root README.
 
 ```sh
-docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml up -d --build --no-deps voicecommandapi exercise-config-service
-docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml ps -a voicecommandapi exercise-config-service
+docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml up --build -d
+docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml ps
 curl http://localhost:8000/commands
 curl http://localhost:7001/health
-curl http://localhost:7001/exercise/list
+curl http://localhost:8090/
 ```
 
-`voicecommandapi` serves the preset commands on port 8000. `exercise-config-service` stores exercise data in `./data/exercises` and serves port 7001. Listing commands and exercises does **not** move the robot. Do not send `POST /command` until the robot connection and available space have been checked.
+The UI is at `http://localhost:8090`. The API ports are 15000 (NAO), 6001 (pose), 17000 (translator), 7001 (exercise configuration), 8000 (voice commands), and 9901 (audio transcription). Listing commands does **not** move the robot. The first build downloads large Python packages and a pose model; allow it to finish before checking the UI.
 
-The translator can also start without the robot to verify its own API process. Its `/test` endpoint does not run a pose or contact NAO:
+To check the other API processes without sending motion commands:
 
 ```sh
-docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml up -d --build --no-deps translatorapi
 curl http://localhost:17000/test
+curl http://localhost:6001/
+curl http://localhost:9901/test
 ```
 
-The full pipeline also has `skeletonfinderapi` (image/video pose detection, port 6001), `translatorapi` (pose conversion, container port 7000), `naorobotapi` (NAOqi bridge, container port 5000), and `web` (UI, port 8090). macOS Control Center often occupies host ports 5000 and 7000, so the Mac override maps them to 15000 and 17000. The skeleton image downloads a large YOLO model at build time. The NAO bridge uses Ubuntu 14.04, Python 2.7, and x86_64 Linux libraries, so it runs under `linux/amd64` emulation on Apple Silicon. Its image now builds and its HTTP root endpoint starts on this Mac; connection to NAOqi remains untested until the robot is available. Docker Desktop's Apple Virtualization framework plus Rosetta can accelerate amd64 emulation; Docker VMM currently does not support Rosetta.
+macOS Control Center often occupies host ports 5000 and 7000, so the Mac override maps them to 15000 and 17000. The NAO bridge uses Ubuntu 14.04, Python 2.7, and x86_64 Linux libraries, so it runs under `linux/amd64` emulation on Apple Silicon. The audio service also uses `linux/amd64` because a pinned dependency has no Linux ARM64 wheel. The complete stack has been built and its HTTP endpoints checked on this Mac. Docker Desktop's Apple Virtualization framework plus Rosetta can accelerate amd64 emulation; Docker VMM currently does not support Rosetta.
 
 When the physical robot is reachable, pass its **current** IP to Compose:
 
@@ -51,12 +52,12 @@ NAO_IP=<new-robot-ip> docker compose -f docker-compose.dev.yml -f docker-compose
 curl http://localhost:15000/
 ```
 
-`curl /` checks only that the API process is running; it does not prove that NAOqi can connect or that motion commands are safe. The next integration step is to build and verify `skeletonfinderapi` and `translatorapi`, then start the UI. Avoid launching the complete Compose stack until each stage has passed.
+`curl /` checks only that the API process is running; it does not prove that NAOqi can connect. For the Choregraphe virtual robot on the same Mac, leave `NAO_IP` unset or set it to `host.docker.internal` in the root `.env`; the NAO API container must reach NAOqi on port 9559. For a physical robot, use its current LAN IP instead.
 
-Stop the locally started services with:
+Stop the complete stack with:
 
 ```sh
-docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml stop naorobotapi translatorapi voicecommandapi exercise-config-service
+docker compose -f docker-compose.dev.yml -f docker-compose.mac.yml down
 ```
 
 Sources: the supplied presentation, repository configuration, <https://doc.aldebaran.com/>, and Docker's [Mac install](https://docs.docker.com/desktop/setup/install/mac-install/) and [virtualization settings](https://docs.docker.com/desktop/settings-and-maintenance/settings/) documentation.
