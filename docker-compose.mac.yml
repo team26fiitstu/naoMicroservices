@@ -17,7 +17,7 @@ services:
     ports: !override
       - "127.0.0.1:6001:6001"
     volumes: !override
-      - ./data/pose-images:/images:ro
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images:ro
 
   translatorapi:
     ports: !override
@@ -26,7 +26,7 @@ services:
       POSE_HOST_ROOT: /images
       POSE_CONT_ROOT: /images
     volumes: !override
-      - ./data/pose-images:/images
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images
 
   voicecommandapi:
     ports: !override
@@ -37,11 +37,11 @@ services:
     ports: !override
       - "127.0.0.1:7001:7001"
     volumes: !override
-      - ./data/exercises:/service/exercises
+      - ${EXERCISES_HOST_DIR:-./data/exercises}:/service/exercises
 
   audio-to-text-converter:
     platform: linux/amd64
     ports: !override
       - "127.0.0.1:9901:9901"
     volumes: !override
-      - ./data/exercises:/service/exercises
+      - ${EXERCISES_HOST_DIR:-./data/exercises}:/service/exercises
