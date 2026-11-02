@@ -12,6 +12,9 @@ Flask microservice that:
 import os
 import uuid
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from flask import Flask, request, jsonify
 import requests
@@ -19,30 +22,26 @@ import requests
 from arms_translator import translate_arms
 from video_pose_processor import process_video_bytes
 from flask_cors import CORS
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 # =========================
 # CONFIG
 # =========================
 
-NO_NAMING = os.environ.get('NO_NAMING', True)
-if NO_NAMING:
-    POSE_API_URL = "http://localhost:6001/media_pipe_pose/pose_from_image"
-    SET_POSE_URL = "http://localhost:5000/setting_pose/setPose"
-    VOICE_LINES_URL = "http://localhost:5000/voiceLines/applyVoiceLine"
-    EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://localhost:7001")
-else:
-    POSE_API_URL = "http://skeletonfinderapi:6001/media_pipe_pose/pose_from_image"
-    SET_POSE_URL = "http://naorobotapi:5000/setting_pose/setPose"
-    VOICE_LINES_URL = "http://naorobotapi:5000/voiceLines/applyVoiceLine"
-    EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://exerciseconfigservice:7001")
+SERVICE_NETWORK = os.environ.get("SERVICE_NETWORK", "local").lower()
+if SERVICE_NETWORK not in ("local", "docker"):
+    raise ValueError("SERVICE_NETWORK must be 'local' or 'docker'")
+hosts = {"local": ("localhost", "localhost", "localhost"),
+         "docker": ("skeletonfinderapi", "naorobotapi", "exerciseconfigservice")}
+pose_host, robot_host, exercise_host = hosts[SERVICE_NETWORK]
+POSE_API_URL = os.environ.get("POSE_API_URL", "http://%s:6001/media_pipe_pose/pose_from_image" % pose_host)
+SET_POSE_URL = os.environ.get("SET_POSE_URL", "http://%s:5000/setting_pose/setPose" % robot_host)
+VOICE_LINES_URL = os.environ.get("VOICE_LINES_URL", "http://%s:5000/voiceLines/applyVoiceLine" % robot_host)
+EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://%s:7001" % exercise_host)
 
 # Host directory mounted into pose container as /images
-POSE_HOST_ROOT = "/home/ubuntu/Pictures"      # host/VM path
-POSE_CONT_ROOT = "/images"                    # container path
+POSE_HOST_ROOT = os.environ.get("POSE_HOST_ROOT", "./data/pose-images" if SERVICE_NETWORK == "local" else "/images")
+POSE_CONT_ROOT = os.environ.get("POSE_CONT_ROOT", POSE_HOST_ROOT)
 
 # Subdir for single-image uploads (used by /arms/from_image)
 UPLOAD_SUBDIR = "nao_pose_uploads"

@@ -26,10 +26,9 @@ from lah import prava_noha_zdvihnuta_v_lahu_naspat
 from lah import lava_noha_naspat_v_lahu
 import dotenv
 
-if os.environ.get("LOCAL", "True") == "True":
-    dotenv.load_dotenv()
+dotenv.load_dotenv()
 
-NAO_IP = os.environ.get("HOST_PORT", "127.0.0.1")
+NAO_IP = os.environ.get("NAO_IP", "127.0.0.1")
 NAO_PORT = os.environ.get("NAO_PORT", 9559)
 
 

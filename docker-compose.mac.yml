@@ -1,0 +1,46 @@
+# Apply after docker-compose.dev.yml on Apple Silicon Macs.
+# Compose 2.24.4+ is required for !override.
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:8090:80"
+
+  naorobotapi:
+    platform: linux/amd64
+    command: python server.py production
+    ports: !override
+      - "127.0.0.1:15000:5000"
+    environment:
+      FLASK_ENV: production
+
+  skeletonfinderapi:
+    ports: !override
+      - "127.0.0.1:6001:6001"
+    volumes: !override
+      - ./data/pose-images:/images:ro
+
+  translatorapi:
+    ports: !override
+      - "127.0.0.1:17000:7000"
+    environment:
+      POSE_HOST_ROOT: /images
+      POSE_CONT_ROOT: /images
+    volumes: !override
+      - ./data/pose-images:/images
+
+  voicecommandapi:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    volumes: !override []
+
+  exercise-config-service:
+    ports: !override
+      - "127.0.0.1:7001:7001"
+    volumes: !override
+      - ./data/exercises:/service/exercises
+
+  audio-to-text-converter:
+    ports: !override
+      - "127.0.0.1:9901:9901"
+    volumes: !override
+      - ./data/exercises:/service/exercises

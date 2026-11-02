@@ -2,9 +2,10 @@
 # Makefile for Multi-Service Project
 # ==========================================
 
-REGISTRY ?= berserkchmonya
+-include .env
+REGISTRY ?= jperdek
 TAG ?= latest
-SERVICES = web team19-web nao-robot-api skeleton-finder-api translator voice-command-api exercise-config-service
+SERVICES = web nao-robot-api skeleton-finder-api translator voice-command-api exercise-config-service audio-to-text-converter
 
 # ------------------------------------------
 #          HELP (auto-generated)
@@ -65,12 +66,12 @@ dev-start: ## Start dev environment from existing images (no build)
 	@echo ""
 	@echo "🌐 Services:"
 	@echo "  - web:                http://localhost:8090"
-	@echo "  - team19-web:         http://localhost:3000"
 	@echo "  - nao-robot-api:      http://localhost:5000"
 	@echo "  - skeleton-finder-api: http://localhost:6001"
 	@echo "  - translator:         http://localhost:7000"
 	@echo "  - voice-command-api:  http://localhost:8000"
 	@echo "  - exercise-config:    http://localhost:7001"
+	@echo "  - audio-to-text:      http://localhost:9901"
 
 dev-start-%: ## Start a single service from existing image (usage: make dev-start-web)
 	docker compose -f docker-compose.dev.yml up -d $*
@@ -81,12 +82,12 @@ dev-up: build-all ## Start development environment (build + run)
 	@echo ""
 	@echo "🌐 Services:"
 	@echo "  - web:                http://localhost:8090"
-	@echo "  - team19-web:         http://localhost:3000"
 	@echo "  - nao-robot-api:      http://localhost:5000"
 	@echo "  - skeleton-finder-api: http://localhost:6001"
 	@echo "  - translator:         http://localhost:7000"
 	@echo "  - voice-command-api:  http://localhost:8000"
 	@echo "  - exercise-config:    http://localhost:7001"
+	@echo "  - audio-to-text:      http://localhost:9901"
 
 dev-up-%: build-% ## Start only one dev service (usage: make dev-up-web)
 	@echo "Starting development environment for $*..."

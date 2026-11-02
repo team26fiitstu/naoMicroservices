@@ -4,12 +4,9 @@ import { standardButtonColor, standardButtonHeight, secondaryButtonColor} from "
 import { Button } from "@/components/ui/button";
 import { Trash2, Loader2, Pickaxe, ArrowRight } from "lucide-react";
 
-const NO_NAMING = true; 
+const IS_DEV_SERVER = import.meta.env.DEV;
 // ── API config ────────────────────────────────────────────────────
-const TO_TEXT_API = NO_NAMING? "http://localhost:9901" : "";
-
-console.log(process.env.HOST_DOCKER_INTERNAL);
-console.log(process.env);
+const TO_TEXT_API = IS_DEV_SERVER? "http://localhost:9901" : "";
 export function CustomAudioPlayer({url, keyID, index, blob, defaultText,
                             overallRecordedMessage, onOverallRecordedMessageChange, 
                             saveAudioFile, languageVoice, speedVoice, aggregatedVoiceLinesRef}) {

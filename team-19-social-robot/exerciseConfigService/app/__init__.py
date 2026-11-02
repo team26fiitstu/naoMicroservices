@@ -6,7 +6,7 @@ def create_app():
     app = Flask(__name__)
 
     # Ensure the exercises directory exists on startup
-    exercises_dir = os.environ.get("EXERCISES_DIR", "/exercises")
+    exercises_dir = os.environ.get("EXERCISES_DIR", "./data/exercises")
     os.makedirs(exercises_dir, exist_ok=True)
 
     from .routes.health import health_bp

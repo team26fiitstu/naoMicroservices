@@ -1,4 +1,8 @@
 /web/node_modules/*
+/.env
+/team-19-social-robot/.env
+/team-19-social-robot/naoRobotAPI/.env
+/data/
 /web/node_modules/
 ./web/node_modules/*
 ./web/node_modules/

@@ -3,38 +3,28 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-      args:
-        REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
     image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
     container_name: web_dev
     ports:
       - "8090:80"
     networks:
       - appnet
-    environment:
-        NO_NAMING: true
-        REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
     depends_on:
       - naorobotapi
       - skeletonfinderapi
       - translatorapi
-      
+
   naorobotapi:
     build:
       context: ./team-19-social-robot/naoRobotAPI
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
     command: python server.py
     container_name: naorobotapi
-    env_file: ./team-19-social-robot/.env
+    env_file: ./.env
     ports:
       - "5000:5000"
     environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      HOST_PORT: ${HOST_PORT:-1234}
-      HOST_IP: ${HOST_IP:-127.0.0.1}
       NAO_PORT: ${NAO_PORT:-9559}
       NAO_IP: ${NAO_IP:-host.docker.internal}
       FLASK_ENV: development
@@ -47,19 +37,17 @@ services:
     build:
       context: ./team-19-social-robot/skeletonFinderAPI
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
     command: python server.py
     container_name: skeletonfinderapi
-    env_file: ./team-19-social-robot/.env
+    env_file: ./.env
     ports:
       - "6001:6001"
     environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
       FLASK_ENV: development
+      SERVICE_NETWORK: docker
     volumes:
-      - /home/ubuntu/Pictures:/images:ro
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images:ro
     networks:
       - appnet
 
@@ -67,21 +55,19 @@ services:
     build:
       context: ./team-19-social-robot/translator
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     container_name: translatorapi
-    env_file: ./team-19-social-robot/.env
+    env_file: ./.env
     ports:
       - "7000:7000"
     environment:
-      COMPOSE: true
-      HOST_DOCKER_INTERNAL: host.docker.internal
       FLASK_ENV: development
-      EXERCISE_CONFIG_URL: http://exerciseconfigservice:7001
+      SERVICE_NETWORK: docker
+      POSE_HOST_ROOT: /images
+      POSE_CONT_ROOT: /images
     volumes:
-      - /home/ubuntu/Pictures:/home/ubuntu/Pictures
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images
     depends_on:
       - naorobotapi
       - skeletonfinderapi
@@ -93,16 +79,14 @@ services:
     build:
       context: ./team-19-social-robot/voiceCommandAPI
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
     container_name: voicecommandapi
     ports:
       - "8000:8000"
+    env_file: ./.env
     environment:
       FLASK_ENV: development
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      NAO_SET_POSE_URL: http://naorobotapi:5000/setting_pose/setPose
+      SERVICE_NETWORK: docker
     depends_on:
       - naorobotapi
     volumes:
@@ -114,45 +98,39 @@ services:
     build:
       context: ./team-19-social-robot/exerciseConfigService
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
     command: python run.py
     container_name: exerciseconfigservice
-    env_file: ./team-19-social-robot/.env
+    env_file: ./.env
     ports:
       - "7001:7001"
     environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
       FLASK_ENV: development
       EXERCISES_DIR: /service/exercises
-      VOICE_COMMAND_API_URL: http://voicecommandapi:8000
+      SERVICE_NETWORK: docker
     depends_on:
       - voicecommandapi
     volumes:
-      - /home/ubuntu/exercises:/service/exercises
+      - ${EXERCISES_HOST_DIR:-./data/exercises}:/service/exercises
     networks:
       - appnet
   audio-to-text-converter:
     build:
       context: ./team-19-social-robot/audioToTextConverter
       dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
     image: ${REGISTRY:-jperdek}/audio-to-text-converter:${TAG:-latest}
     command: python text_from_audio_extractor_service.py
     container_name: audiototextconverter
-    env_file: ./team-19-social-robot/.env
+    env_file: ./.env
     ports:
       - "9901:9901"
     environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
       FLASK_ENV: development
       EXERCISES_DIR: /service/exercises
     depends_on:
       - voicecommandapi
     volumes:
-      - /home/ubuntu/exercises:/service/exercises
+      - ${EXERCISES_HOST_DIR:-./data/exercises}:/service/exercises
     networks:
       - appnet
 networks:

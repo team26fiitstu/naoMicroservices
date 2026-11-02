@@ -5,8 +5,7 @@ import time
 import math
 import dotenv
 
-if os.environ.get("LOCAL", "True") == "True":
-    dotenv.load_dotenv()
+dotenv.load_dotenv()
 
 NAO_IP = os.environ.get("NAO_IP", "127.0.0.1")
 NAO_PORT = int(os.environ.get("NAO_PORT", 9559))

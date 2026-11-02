@@ -24,11 +24,11 @@ from app.storage import (
 from dotenv import load_dotenv
 
 load_dotenv()
-NO_NAMING = os.environ.get('NO_NAMING', True)
-if NO_NAMING:
-    VOICE_COMMAND_API_URL = os.environ.get("VOICE_COMMAND_API_URL", "http://localhost:8000")
-else:
-    VOICE_COMMAND_API_URL = os.environ.get("VOICE_COMMAND_API_URL", "http://voicecommandapi:8000")
+SERVICE_NETWORK = os.environ.get("SERVICE_NETWORK", "local").lower()
+if SERVICE_NETWORK not in ("local", "docker"):
+    raise ValueError("SERVICE_NETWORK must be 'local' or 'docker'")
+voice_host = "voicecommandapi" if SERVICE_NETWORK == "docker" else "localhost"
+VOICE_COMMAND_API_URL = os.environ.get("VOICE_COMMAND_API_URL", "http://%s:8000" % voice_host)
 exercise_bp = Blueprint("exercise", __name__, url_prefix="/exercise")
 
 

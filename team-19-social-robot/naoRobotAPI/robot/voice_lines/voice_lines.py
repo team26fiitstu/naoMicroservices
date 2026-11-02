@@ -6,8 +6,7 @@ import time
 from flask import g
 import string
 
-if os.environ.get("LOCAL", "True") == "True":
-    dotenv.load_dotenv()
+dotenv.load_dotenv()
 
 def set_to_nao_speed_range(current_speed):
     if 0 > int(current_speed) > 100:

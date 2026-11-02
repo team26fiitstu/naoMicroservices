@@ -10,14 +10,14 @@ services:
     ports:
       - "8001:5000"
     environment:
-      HOST_PORT: ${HOST_PORT:-1234}
-      HOST_IP: ${HOST_IP:-127.0.0.1}
       NAO_PORT: ${NAO_PORT:-9559}
       # NAO_IP: host.docker.internal
-      NAO_IP: 10.62.44.100
+      NAO_IP: ${NAO_IP:-host.docker.internal}
       FLASK_ENV: development
     networks:
-      - buildernet
+      buildernet:
+        aliases:
+          - naorobotapi
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -34,9 +34,11 @@ services:
     environment:
       FLASK_ENV: development
     volumes:
-      - /home/ubuntu/Pictures:/images:ro
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images:ro
     networks:
-      - buildernet
+      buildernet:
+        aliases:
+          - skeletonfinderapi
 
   translatorAPI:
     build:
@@ -49,9 +51,12 @@ services:
     ports:
       - "8003:7000"
     environment:
-      FLASK_ENV: development 
+      FLASK_ENV: development
+      SERVICE_NETWORK: docker
+      POSE_HOST_ROOT: /images
+      POSE_CONT_ROOT: /images
     volumes:
-      - /home/ubuntu/Pictures:/home/ubuntu/Pictures
+      - ${POSE_IMAGES_HOST_DIR:-./data/pose-images}:/images
     depends_on:
       - naoRobotAPI
       - skeletonFinderAPI

@@ -57,7 +57,7 @@ import uuid
 from datetime import datetime
 
 # Read from environment — set in docker-compose
-EXERCISES_DIR = os.environ.get("EXERCISES_DIR", "/service/exercises")
+EXERCISES_DIR = os.environ.get("EXERCISES_DIR", "./data/exercises")
 
 
 # =============================================================================

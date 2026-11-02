@@ -16,7 +16,7 @@ RUN mkdir pynaoqi
 COPY ./pynaoqi /pynaoqi
 #COPY ./pynaoqi /usr/local/lib/python2.7/
 COPY . /naoRobotAPI
-ENV PYTHONPATH="/pynaoqi:${PYTHONPATH}"
+ENV PYTHONPATH=${PYTHONPATH}:/pynaoqi:/pynaoqi/urllib3
 
 WORKDIR /naoRobotAPI
 #RUN apt-get -y update
@@ -49,7 +49,4 @@ RUN pip install -r requirements.txt
 #file:///C:/Program%20Files%20(x86)/Aldebaran%20Robotics/Choregraphe%20Suite%202.1/share/doc/software/choregraphe/index.html
 #RUN sudo apt install cmake
 #python ./robot_module_testing/test.py
-
-ENV NO_NAMING $NO_NAMING
-
 CMD [ "python", "server.py" ]

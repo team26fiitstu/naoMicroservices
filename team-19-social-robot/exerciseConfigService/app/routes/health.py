@@ -6,7 +6,7 @@ health_bp = Blueprint("health", __name__)
 
 @health_bp.route("/health", methods=["GET"])
 def health():
-    exercises_dir = os.environ.get("EXERCISES_DIR", "/exercises")
+    exercises_dir = os.environ.get("EXERCISES_DIR", "./data/exercises")
     dir_exists = os.path.isdir(exercises_dir)
 
     # Count how many exercises are stored

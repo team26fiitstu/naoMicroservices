@@ -34,3 +34,9 @@ services:
       context: ./team-19-social-robot/exerciseConfigService
       dockerfile: Dockerfile
     image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
+
+  audio-to-text-converter:
+    build:
+      context: ./team-19-social-robot/audioToTextConverter
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-jperdek}/audio-to-text-converter:${TAG:-latest}

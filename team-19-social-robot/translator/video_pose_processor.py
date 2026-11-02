@@ -15,14 +15,14 @@ import os
 from typing import Dict, Any, List
 
 import requests
-NO_NAMING = os.environ.get('NO_NAMING', True)
-print(NO_NAMING)
-print("NOOOO NAMING")
-if NO_NAMING:
-    POSE_FROM_VIDEO_URL = "http://localhost:6001/media_pipe_pose/pose_from_video"
-else:
-    POSE_FROM_VIDEO_URL = "http://skeletonFinderAPI:6001/media_pipe_pose/pose_from_video"
-#POSE_FROM_VIDEO_URL = "http://localhost:6001/media_pipe_pose/pose_from_video"
+
+service_network = os.environ.get("SERVICE_NETWORK", "local").lower()
+if service_network not in ("local", "docker"):
+    raise ValueError("SERVICE_NETWORK must be 'local' or 'docker'")
+pose_host = "skeletonfinderapi" if service_network == "docker" else "localhost"
+POSE_FROM_VIDEO_URL = os.environ.get(
+    "POSE_FROM_VIDEO_URL", "http://%s:6001/media_pipe_pose/pose_from_video" % pose_host
+)
 
 REQUIRED_JOINTS = [
     "Left shoulder",

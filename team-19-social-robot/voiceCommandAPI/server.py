@@ -21,17 +21,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-LOCAL = os.environ.get('LOCAL', True)
-if LOCAL:
-    NAO_SET_POSE_URL = os.environ.get(
-        "NAO_SET_POSE_URL",
-        "http://localhost:5000/setting_pose/setPose",
-    )
-else:
-    NAO_SET_POSE_URL = os.environ.get(
-        "NAO_SET_POSE_URL",
-        "http://naorobotapi:5000/setting_pose/setPose",
-    )
+SERVICE_NETWORK = os.environ.get("SERVICE_NETWORK", "local").lower()
+if SERVICE_NETWORK not in ("local", "docker"):
+    raise ValueError("SERVICE_NETWORK must be 'local' or 'docker'")
+robot_host = "naorobotapi" if SERVICE_NETWORK == "docker" else "localhost"
+NAO_SET_POSE_URL = os.environ.get("NAO_SET_POSE_URL", "http://%s:5000/setting_pose/setPose" % robot_host)
 
 
 
