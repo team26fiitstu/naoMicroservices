@@ -2,7 +2,9 @@ services:
   web:
     build: ./web
     image: nao-local/web:dev
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     ports:
       - "8090:80"
     depends_on:
@@ -14,9 +16,13 @@ services:
     build: ./services/naoRobotAPI
     image: nao-local/nao-robot-api:dev
     command: python server.py production
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
+      NAO_IP: ${NAO_IP:-host.docker.internal}
+      NAO_PORT: ${NAO_PORT:-9559}
     ports:
       - "5000:5000"
     extra_hosts:
@@ -28,7 +34,9 @@ services:
     build: ./services/skeletonFinderAPI
     image: nao-local/skeleton-finder-api:dev
     command: python server.py
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
     ports:
@@ -40,7 +48,9 @@ services:
     build: ./services/translator
     image: nao-local/translator:dev
     command: python nao_pose_service.py
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
       POSE_IMAGE_DIR: /images
@@ -56,7 +66,9 @@ services:
   voicecommandapi:
     build: ./services/voiceCommandAPI
     image: nao-local/voice-command-api:dev
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
     ports:
@@ -68,14 +80,16 @@ services:
     build: ./services/exerciseConfigService
     image: nao-local/exercise-config-service:dev
     command: python run.py
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
       EXERCISES_DIR: /service/exercises
     ports:
       - "7001:7001"
     volumes:
-      - ./exercises:/service/exercises
+      - ${EXERCISES_HOST_DIR:-./exercises}:/service/exercises
     depends_on:
       - voicecommandapi
 
@@ -85,7 +99,9 @@ services:
     build: ./services/audioToTextConverter
     image: nao-local/audio-to-text-converter:dev
     command: python text_from_audio_extractor_service.py
-    env_file: ./.env
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       COMPOSE_NETWORK: "true"
     ports:

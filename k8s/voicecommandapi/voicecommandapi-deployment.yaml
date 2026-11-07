@@ -23,8 +23,8 @@ spec:
           env:
             - name: FLASK_ENV
               value: "production"
-            - name: NAO_SET_POSE_URL
-              value: "http://naorobotapi:5000/setting_pose/setPose"
+            - name: COMPOSE_NETWORK
+              value: "true"
           readinessProbe:
             httpGet:
               path: /commands

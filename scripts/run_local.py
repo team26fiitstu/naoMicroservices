@@ -38,7 +38,8 @@ def environment():
     if env.get("NAO_IP") == "host.docker.internal":
         env["NAO_IP"] = "127.0.0.1"
     env["POSE_IMAGE_DIR"] = str(ROOT / "images")
-    env["EXERCISES_DIR"] = str(ROOT / "exercises")
+    env["POSE_SERVICE_IMAGE_DIR"] = env["POSE_IMAGE_DIR"]
+    env["EXERCISES_DIR"] = str((ROOT / env.get("EXERCISES_HOST_DIR", "exercises")).resolve())
     return env
 
 
@@ -50,7 +51,7 @@ def main():
     service_dir, script = SERVICES[sys.argv[1]]
     env = environment()
     (ROOT / "images").mkdir(exist_ok=True)
-    (ROOT / "exercises").mkdir(exist_ok=True)
+    Path(env["EXERCISES_DIR"]).mkdir(parents=True, exist_ok=True)
     executable = str(Path(sys.argv[2]).resolve()) if "/" in sys.argv[2] or "\\" in sys.argv[2] else sys.argv[2]
     return subprocess.call([executable, script], cwd=str(ROOT / "services" / service_dir), env=env)
 

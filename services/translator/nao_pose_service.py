@@ -28,7 +28,7 @@ EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
 
 # Host directory mounted into pose container as /images
 POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", "images"))
-POSE_CONT_ROOT = POSE_HOST_ROOT
+POSE_CONT_ROOT = os.environ.get("POSE_SERVICE_IMAGE_DIR", POSE_HOST_ROOT)
 
 # Subdir for single-image uploads (used by /arms/from_image)
 UPLOAD_SUBDIR = "nao_pose_uploads"

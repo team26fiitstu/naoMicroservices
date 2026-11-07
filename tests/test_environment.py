@@ -42,9 +42,20 @@ class EnvironmentTest(unittest.TestCase):
             self.assertEqual(run_local.environment()["NAO_IP"], "127.0.0.1")
             self.assertEqual(run_local.environment()["COMPOSE_NETWORK"], "false")
             self.assertEqual(run_local.environment()["POSE_IMAGE_DIR"], str(ROOT / "images"))
+            self.assertEqual(run_local.environment()["POSE_SERVICE_IMAGE_DIR"], str(ROOT / "images"))
             self.assertEqual(run_local.environment()["EXERCISES_DIR"], str(ROOT / "exercises"))
         with patch.object(run_local, "read_env", return_value={"NAO_IP": "192.0.2.10", "NAO_PORT": "9559"}):
             self.assertEqual(run_local.environment()["NAO_IP"], "192.0.2.10")
+
+    def test_existing_exercise_directory_is_used(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_local
+        values = {"EXERCISES_HOST_DIR": "/tmp/existing-exercises"}
+        with patch.object(run_local, "read_env", return_value=values):
+            self.assertEqual(
+                run_local.environment()["EXERCISES_DIR"],
+                str(Path(values["EXERCISES_HOST_DIR"]).resolve()),
+            )
 
 
 if __name__ == "__main__":
