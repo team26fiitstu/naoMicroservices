@@ -9,6 +9,8 @@ services:
       - translatorapi
 
   naorobotapi:
+    # Bundled NAOqi Python 2 native libraries are x86-64 only.
+    platform: linux/amd64
     build: ./services/naoRobotAPI
     image: nao-local/nao-robot-api:dev
     command: python server.py production
@@ -21,6 +23,8 @@ services:
       - "host.docker.internal:host-gateway"
 
   skeletonfinderapi:
+    # The pinned MediaPipe release is distributed for x86-64 Linux.
+    platform: linux/amd64
     build: ./services/skeletonFinderAPI
     image: nao-local/skeleton-finder-api:dev
     command: python server.py
@@ -76,6 +80,8 @@ services:
       - voicecommandapi
 
   audio-to-text-converter:
+    # The pinned TorchCodec release has no ARM64 Linux wheel.
+    platform: linux/amd64
     build: ./services/audioToTextConverter
     image: nao-local/audio-to-text-converter:dev
     command: python text_from_audio_extractor_service.py

@@ -33,13 +33,13 @@ docker compose --env-file .env -f docker-compose.dev.yml up --build
 
 Open `http://localhost:8090`. Stop with `docker compose --env-file .env -f docker-compose.dev.yml down`. To start only the configuration service, use `docker compose --env-file .env -f docker-compose.dev.yml up --build --no-deps exercise-config-service`. This requires its image and dependencies, but does not make a physical NAO available.
 
-The first full build downloads Python packages and a pose model. The audio converter also downloads large speech models at runtime. Network access, storage, and compatible CPU resources are required; those downloads are not guaranteed by checkout. The legacy `services/docker-compose.yml` includes the same root definition, so run it from the repository root with `docker compose --env-file .env -f services/docker-compose.yml up --build`.
+The first full build downloads Python packages and a pose model. The pinned NAOqi, MediaPipe and TorchCodec dependencies require x86-64 Linux; Compose selects `linux/amd64` for those three services, which may use emulation on ARM hosts. The audio converter also downloads large speech models at runtime. Network access, storage, and compatible CPU resources are required; those downloads are not guaranteed by checkout. The legacy `services/docker-compose.yml` includes the same root definition, so run it from the repository root with `docker compose --env-file .env -f services/docker-compose.yml up --build`.
 
 ## Run without Docker
 
-Requires Python **3.12** for skeleton detection, Python **3.11** for translator, voice, exercise configuration and audio conversion, and Node **20** plus npm for the web frontend. Install a matching Python 3 environment per service. The skeleton service requires OpenCV system libraries; audio conversion requires FFmpeg and large WhisperX dependencies/models. The NAO adapter additionally requires **Python 2.7**, compatible `pip`/wheels and the vendor's NAOqi Python SDK (`qi`/`naoqi`) on `PYTHONPATH`; its Dockerfile uses Ubuntu 14.04 and bundled Python 2 wheels. Confirm SDK architecture matches your Python 2 installation. The physical NAO or Choregraphe simulator must be installed and running separately.
+Requires Python **3.12** for skeleton detection, Python **3.11** for translator, voice, exercise configuration and audio conversion, and Node **20** plus npm for the web frontend. Install a matching Python 3 environment per service. The pinned pose and audio dependencies need compatible x86-64 wheels for a full local stack; on an ARM host use an x86-64 environment or the Compose setup above. The skeleton service requires OpenCV system libraries; audio conversion requires FFmpeg and large WhisperX dependencies/models. The NAO adapter additionally requires **Python 2.7**, compatible `pip`/wheels and the vendor's NAOqi Python SDK (`qi`/`naoqi`) on `PYTHONPATH`; its Dockerfile uses Ubuntu 14.04 and bundled Python 2 wheels. Confirm SDK architecture and OS match your Python 2 installation. The physical NAO or Choregraphe simulator must be installed and running separately.
 
-From the repository root, first copy and edit `.env` as above, then create `images/` and `exercises/`. Install Python 3 dependencies in separate virtual environments using each service's `requirements.txt`. The translator uses `flask requests flask-cors`; the NAO adapter uses its `requirements.txt` plus the NAOqi SDK and compatible Python 2 dependencies provided as compatible wheels in `services/naoRobotAPI/compatDep` (the existing adapter README contains unrelated upstream text). For example, on macOS/Linux:
+From the repository root, first copy and edit `.env` as above, then create `images/` and `exercises/`. Install Python 3 dependencies in separate virtual environments using each service's `requirements.txt`. The translator uses `flask requests flask-cors`; the NAO adapter uses its `requirements.txt` plus the NAOqi SDK and compatible Python 2 dependencies provided as compatible wheels in `services/naoRobotAPI/compatDep` (the existing adapter README contains unrelated upstream text). For example, on a compatible x86-64 Linux host:
 
 ```sh
 python3.12 -m venv .venv-skeleton
@@ -50,6 +50,7 @@ python3.11 -m venv .venv-app
 python3.11 -m venv .venv-audio
 .venv-audio/bin/pip install -r services/audioToTextConverter/requirements.txt
 mkdir -p images exercises
+curl -fL https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6-pose.pt -o services/skeletonFinderAPI/server/yolov7-w6-pose.pt
 ```
 
 Use the corresponding `Scripts/python.exe` paths on Windows. In **separate terminals**, from the repository root, run:

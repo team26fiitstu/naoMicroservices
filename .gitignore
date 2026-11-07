@@ -33,6 +33,7 @@
 /services/naoRobotAPI/.env
 /images/
 /exercises/
+/services/skeletonFinderAPI/server/*.pt
 
 .idea/
 __pycache__/
