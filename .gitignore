@@ -29,6 +29,10 @@
 
 
 /.env
+/services/.env
+/services/naoRobotAPI/.env
+/images/
+/exercises/
 
 .idea/
 __pycache__/

@@ -39,12 +39,11 @@ const POSE_DISPLAY_SK: Record<string, string> = {
   point_left:  "Ukáž vľavo",
 };
 
-const NO_NAMING = true;
 // ── API config ────────────────────────────────────────────────────
-const UPLOAD_API = NO_NAMING? "http://localhost:7000" : ""; //empty for reverse proxy nginx
-const EDITOR_API = NO_NAMING? "http://localhost:7001" : "";
-const POSES_API  = NO_NAMING? "http://localhost:8000" : "";
-const ROBOT_API  = NO_NAMING? "http://localhost:5000" : "";
+const UPLOAD_API = "http://localhost:7000"; //empty for reverse proxy nginx
+const EDITOR_API = "http://localhost:7001";
+const POSES_API  = "http://localhost:8000";
+const ROBOT_API  = "http://localhost:5000";
 const LLM_API_BASE = import.meta.env.VITE_LLM_API_BASE ?? "https://litellm.blockfinlab.xyz";
 const LLM_API_KEY  = import.meta.env.VITE_LLM_API_KEY ?? "";
 const LLM_MODEL    = "gpt-5.4-fiit";

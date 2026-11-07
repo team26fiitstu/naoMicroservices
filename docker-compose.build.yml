@@ -1,36 +1,3 @@
-services:
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
-
-  nao-robot-api:
-    build:
-      context: ./services/naoRobotAPI
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
-
-  skeleton-finder-api:
-    build:
-      context: ./services/skeletonFinderAPI
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
-
-  translator:
-    build:
-      context: ./services/translator
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
-
-  voice-command-api:
-    build:
-      context: ./services/voiceCommandAPI
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
-
-  exercise-config-service:
-    build:
-      context: ./services/exerciseConfigService
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
+# Image builds use the same services and root environment as runtime.
+include:
+  - docker-compose.dev.yml

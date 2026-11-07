@@ -1,5 +1,3 @@
 urllib3
-dotenv
-python-dotenv
 flask
 flask-cors

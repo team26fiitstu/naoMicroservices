@@ -2,10 +2,7 @@ import qi
 import sys
 import argparse
 import os
-import dotenv
 
-if os.environ.get("LOCAL", "True") == "True":
-    dotenv.load_dotenv()
 
 
 class TestAlMotionBasic():
