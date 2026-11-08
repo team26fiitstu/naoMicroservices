@@ -28,9 +28,7 @@
 
 
 
-/.env
-/services/.env
-/services/naoRobotAPI/.env
+.env
 /images/
 /exercises/
 /services/skeletonFinderAPI/server/*.pt
