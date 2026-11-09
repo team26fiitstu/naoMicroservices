@@ -2,9 +2,12 @@
 # Makefile for Multi-Service Project
 # ==========================================
 
-REGISTRY ?= berserkchmonya
-TAG ?= latest
-SERVICES = web team19-web nao-robot-api skeleton-finder-api translator voice-command-api exercise-config-service
+
+SERVICE_nao-robot-api = naorobotapi
+SERVICE_skeleton-finder-api = skeletonfinderapi
+SERVICE_translator = translatorapi
+SERVICE_voice-command-api = voicecommandapi
+runtime_service = $(or $(SERVICE_$(1)),$(1))
 
 # ------------------------------------------
 #          HELP (auto-generated)
@@ -26,7 +29,7 @@ build-all: ## Build all Docker images
 
 build-%: ## Build a single service (usage: make build-web)
 	@echo "Building $*..."
-	docker compose -f docker-compose.build.yml build $*
+	docker compose -f docker-compose.build.yml build $(call runtime_service,$*)
 
 rebuild-all: ## Rebuild all images from scratch (no cache) and restart
 	@echo "Rebuilding all Docker images (no cache)..."
@@ -35,21 +38,16 @@ rebuild-all: ## Rebuild all images from scratch (no cache) and restart
 
 rebuild-%: ## Rebuild a single service from scratch (usage: make rebuild-web)
 	@echo "Rebuilding $* (no cache)..."
-	docker compose -f docker-compose.build.yml build --no-cache $*
-	docker compose -f docker-compose.dev.yml up -d $*
+	docker compose -f docker-compose.build.yml build --no-cache $(call runtime_service,$*)
+	docker compose -f docker-compose.dev.yml up -d $(call runtime_service,$*)
 
 push-all: ## Push all images to registry (run build-all first if needed)
 	@echo "Pushing images to registry..."
-	@for service in $(SERVICES); do \
-		image=$(REGISTRY)/$$service:$(TAG); \
-		echo "Pushing $$image"; \
-		docker push $$image || echo "Failed to push $$image"; \
-	done
+	docker compose -f docker-compose.dev.yml push
 
 check-images: ## Check if all local images exist
 	@echo "Checking local images..."
-	@for service in $(SERVICES); do \
-		image=$(REGISTRY)/$$service:$(TAG); \
+	@for image in $$(docker compose -f docker-compose.dev.yml config --images); do \
 		if docker image inspect $$image >/dev/null 2>&1; then \
 			echo "✓ $$image"; \
 		else \
@@ -73,7 +71,7 @@ dev-start: ## Start dev environment from existing images (no build)
 	@echo "  - exercise-config:    http://localhost:7001"
 
 dev-start-%: ## Start a single service from existing image (usage: make dev-start-web)
-	docker compose -f docker-compose.dev.yml up -d $*
+	docker compose -f docker-compose.dev.yml up -d $(call runtime_service,$*)
 
 dev-up: build-all ## Start development environment (build + run)
 	@echo "Starting development environment..."
@@ -90,12 +88,12 @@ dev-up: build-all ## Start development environment (build + run)
 
 dev-up-%: build-% ## Start only one dev service (usage: make dev-up-web)
 	@echo "Starting development environment for $*..."
-	docker compose -f docker-compose.dev.yml up -d $*
+	docker compose -f docker-compose.dev.yml up -d $(call runtime_service,$*)
 	@echo ""
 	@echo "Service $* started"
 
 dev-logs-%: ## Show logs for one service (usage: make dev-logs-web)
-	docker compose -f docker-compose.dev.yml logs -f $*
+	docker compose -f docker-compose.dev.yml logs -f $(call runtime_service,$*)
 
 dev-down: ## Stop development environment
 	@echo "Stopping development environment..."
@@ -125,8 +123,7 @@ test: ## Test all services locally
 clean: ## Remove all containers + volumes + images
 	@echo "Cleaning up..."
 	docker compose -f docker-compose.dev.yml down -v
-	@for service in $(SERVICES); do \
-		image=$(REGISTRY)/$$service:$(TAG); \
+	@for image in $$(docker compose -f docker-compose.dev.yml config --images); do \
 		echo "Removing image $$image"; \
 		docker rmi $$image 2>/dev/null || true; \
 	done

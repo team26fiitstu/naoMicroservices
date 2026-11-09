@@ -1,3 +1,12 @@
+
+import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
+if os.environ.get("COMPOSE_NETWORK", "false").lower() != "true" and os.environ.get("NAO_IP") == "host.docker.internal":
+    os.environ["NAO_IP"] = "127.0.0.1"
+
 import sys
 from flask import Flask
 import flask_cors

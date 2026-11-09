@@ -40,6 +40,13 @@ docker compose -f docker-compose.dev.yml up --build
 
 On PowerShell, use `Copy-Item .env.example .env`. Open http://localhost:8090.
 
+To use prebuilt images with the configured `REGISTRY` and `TAG`:
+
+```sh
+docker compose -f docker-compose.dev.yml pull
+docker compose -f docker-compose.dev.yml up --no-build
+```
+
 Stop the services:
 
 ```sh
@@ -62,9 +69,11 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | --- | --- | --- |
 | `NAO_IP` | NAOqi address | `host.docker.internal` |
 | `NAO_PORT` | NAOqi port | `9559` |
+| `REGISTRY` | Docker image namespace | `jperdek` |
+| `TAG` | Docker image tag | `latest` |
 | `EXERCISES_HOST_DIR` | Exercise directory on the host | `./exercises` |
 
-Compose reads the root `.env` automatically.
+Compose and Python service entry points read the root `.env` automatically; existing process variables take precedence. Without Docker, NAO API maps `host.docker.internal` to `127.0.0.1` for Choregraphe.
 
 ## Robot configuration
 

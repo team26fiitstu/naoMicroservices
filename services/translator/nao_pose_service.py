@@ -10,6 +10,11 @@ Flask microservice that:
 """
 
 import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
+
 import uuid
 import json
 
@@ -27,7 +32,7 @@ VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("nao
 EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
 
 # Host directory mounted into pose container as /images
-POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", "images"))
+POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "images")))
 POSE_CONT_ROOT = os.environ.get("POSE_SERVICE_IMAGE_DIR", POSE_HOST_ROOT)
 
 # Subdir for single-image uploads (used by /arms/from_image)
