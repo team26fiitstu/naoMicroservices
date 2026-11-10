@@ -1,7 +1,7 @@
 services:
   web:
     build: ./web
-    image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/web:${TAG:-latest}
     env_file:
       - path: ./.env
         required: false
@@ -14,7 +14,7 @@ services:
     # Bundled NAOqi Python 2 native libraries are x86-64 only.
     platform: linux/amd64
     build: ./services/naoRobotAPI
-    image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/nao-robot-api:${TAG:-latest}
     command: python server.py production
     env_file:
       - path: ./.env
@@ -32,7 +32,7 @@ services:
     # The pinned MediaPipe release is distributed for x86-64 Linux.
     platform: linux/amd64
     build: ./services/skeletonFinderAPI
-    image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/skeleton-finder-api:${TAG:-latest}
     command: python server.py
     env_file:
       - path: ./.env
@@ -46,7 +46,7 @@ services:
 
   translatorapi:
     build: ./services/translator
-    image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     env_file:
       - path: ./.env
@@ -65,7 +65,7 @@ services:
 
   voicecommandapi:
     build: ./services/voiceCommandAPI
-    image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/voice-command-api:${TAG:-latest}
     env_file:
       - path: ./.env
         required: false
@@ -78,7 +78,7 @@ services:
 
   exercise-config-service:
     build: ./services/exerciseConfigService
-    image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/exercise-config-service:${TAG:-latest}
     command: python run.py
     env_file:
       - path: ./.env
@@ -97,7 +97,7 @@ services:
     # The pinned TorchCodec release has no ARM64 Linux wheel.
     platform: linux/amd64
     build: ./services/audioToTextConverter
-    image: ${REGISTRY:-jperdek}/audio-to-text-converter:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/audio-to-text-converter:${TAG:-latest}
     command: python text_from_audio_extractor_service.py
     env_file:
       - path: ./.env

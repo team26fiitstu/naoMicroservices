@@ -1,4 +1,4 @@
-# Repository Stucture
+# Repository Structure
 
 ```
 naoMicroservices/
@@ -29,6 +29,8 @@ naoMicroservices/
 ```
 
 # Docker Compose
+
+GitHub Actions publishes images to `ghcr.io/team26fiitstu` from `master`. Use `TAG=sha-<commit>` for a specific version or `TAG=latest` for the latest published set. Pull requests build changed images without publishing.
 
 Requires Docker Engine/Desktop with Compose v2.24+. Run from the repository root:
 
@@ -69,7 +71,7 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | --- | --- | --- |
 | `NAO_IP` | NAOqi address | `host.docker.internal` |
 | `NAO_PORT` | NAOqi port | `9559` |
-| `REGISTRY` | Docker image namespace | `jperdek` |
+| `REGISTRY` | Docker image namespace | `ghcr.io/team26fiitstu` |
 | `TAG` | Docker image tag | `latest` |
 | `EXERCISES_HOST_DIR` | Exercise directory on the host | `./exercises` |
 

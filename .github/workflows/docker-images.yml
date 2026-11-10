@@ -1,0 +1,85 @@
+name: Docker images
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: web
+            context: ./web
+          - image: nao-robot-api
+            context: ./services/naoRobotAPI
+          - image: skeleton-finder-api
+            context: ./services/skeletonFinderAPI
+          - image: translator
+            context: ./services/translator
+          - image: voice-command-api
+            context: ./services/voiceCommandAPI
+          - image: exercise-config-service
+            context: ./services/exerciseConfigService
+          - image: audio-to-text-converter
+            context: ./services/audioToTextConverter
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            changed:
+              - '${{ matrix.context }}/**'
+              - '.github/workflows/docker-images.yml'
+
+      - uses: docker/setup-buildx-action@v3
+        if: github.event_name != 'pull_request' || steps.filter.outputs.changed == 'true'
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        if: steps.filter.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/team26fiitstu/${{ matrix.image }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        if: steps.filter.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Tag unchanged image with commit SHA
+        if: github.event_name == 'push' && steps.filter.outputs.changed != 'true'
+        run: |
+          IMAGE=ghcr.io/team26fiitstu/${{ matrix.image }}
+          docker buildx imagetools create \
+            --tag "$IMAGE:sha-${GITHUB_SHA::7}" \
+            "$IMAGE:latest"
