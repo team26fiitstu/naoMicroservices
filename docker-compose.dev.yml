@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
-    image: ${REGISTRY:-jperdek}/web:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/web:${TAG:-latest}
     container_name: web_dev
     ports:
       - "8090:80"
@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/nao-robot-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/nao-robot-api:${TAG:-latest}
     command: python server.py
     container_name: naorobotapi
     env_file: ./services/.env
@@ -49,7 +49,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/skeleton-finder-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/skeleton-finder-api:${TAG:-latest}
     command: python server.py
     container_name: skeletonfinderapi
     env_file: ./services/.env
@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/translator:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     container_name: translatorapi
     env_file: ./services/.env
@@ -95,7 +95,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/voice-command-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/voice-command-api:${TAG:-latest}
     container_name: voicecommandapi
     ports:
       - "8000:8000"
@@ -114,7 +114,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/exercise-config-service:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/exercise-config-service:${TAG:-latest}
     command: python run.py
     container_name: exerciseconfigservice
     env_file: ./services/.env
@@ -137,7 +137,7 @@ services:
       dockerfile: Dockerfile
       args:
         NO_NAMING: false
-    image: ${REGISTRY:-jperdek}/audio-to-text-converter:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/team26fiitstu}/audio-to-text-converter:${TAG:-latest}
     command: python text_from_audio_extractor_service.py
     container_name: audiototextconverter
     env_file: ./services/.env

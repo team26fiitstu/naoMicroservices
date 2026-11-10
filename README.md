@@ -1,4 +1,4 @@
-# Repository Stucture
+# Repository Structure
 
 ```
 naoMicroservices/
