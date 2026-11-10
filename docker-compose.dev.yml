@@ -9,6 +9,7 @@ services:
       - "8090:80"
     depends_on:
       - translatorapi
+      - audio-to-text-converter
 
   naorobotapi:
     # Bundled NAOqi Python 2 native libraries are x86-64 only.

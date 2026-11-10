@@ -2,6 +2,16 @@
 
 '''Cartesian control: Multiple Effector Trajectories'''
 import os
+from dotenv import load_dotenv
+
+# Standalone scripts use the same root configuration as the API service.
+load_dotenv(os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", ".env"
+)))
+if (os.environ.get("COMPOSE_NETWORK", "false").strip().lower() != "true"
+        and os.environ.get("NAO_IP") == "host.docker.internal"):
+    os.environ["NAO_IP"] = "127.0.0.1"
+
 import sys
 import motion
 import almath
@@ -27,7 +37,7 @@ from lah import lava_noha_naspat_v_lahu
 
 
 NAO_IP = os.environ.get("NAO_IP", "127.0.0.1")
-NAO_PORT = os.environ.get("NAO_PORT", 9559)
+NAO_PORT = int(os.environ.get("NAO_PORT", 9559))
 
 
 def StiffnessOn(proxy):

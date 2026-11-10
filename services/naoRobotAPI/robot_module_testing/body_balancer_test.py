@@ -3,6 +3,16 @@
 
 """Example: Whole Body Motion - Foot State"""
 import os
+from dotenv import load_dotenv
+
+# Standalone scripts use the same root configuration as the API service.
+load_dotenv(os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", ".env"
+)))
+if (os.environ.get("COMPOSE_NETWORK", "false").strip().lower() != "true"
+        and os.environ.get("NAO_IP") == "host.docker.internal"):
+    os.environ["NAO_IP"] = "127.0.0.1"
+
 import qi
 import argparse
 import sys
