@@ -2,8 +2,8 @@ import json
 from flask import Blueprint
 
 from robot_module_testing.movement_test import NAOController
-from test import TestAlMotionBasic
-from movement_test import test as movement_test
+from .test import TestAlMotionBasic
+from .movement_test import test as movement_test
 
 
 def application_json_response(payload, status):

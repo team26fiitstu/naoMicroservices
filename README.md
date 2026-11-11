@@ -28,6 +28,18 @@ naoMicroservices/
 └── docker-compose.build.yml
 ```
 
+# Autonomous Python tests
+
+From the repository root, use Python 3.12 and an isolated environment. Only Flask, HTTP client, Pillow, dotenv, and pytest are needed; pose model and NAOqi packages are replaced with test stubs.
+
+```sh
+python3 -m venv /tmp/nao-offline-venv
+/tmp/nao-offline-venv/bin/python -m pip install -r tests/offline/requirements.txt
+/tmp/nao-offline-venv/bin/python -m pytest -q tests/offline services/translator/tests/test_arms_translator.py tests/test_environment.py
+```
+
+The final command is the complete offline test run. It uses Flask test clients and a fake NAO interface installed before robot modules are imported. It excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
+
 # Docker Compose
 
 GitHub Actions publishes images to `ghcr.io/team26fiitstu` from `master`. Use `TAG=sha-<commit>` for a specific version or `TAG=latest` for the latest published set. Pull requests build changed images without publishing.
