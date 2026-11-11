@@ -1,158 +1,109 @@
 services:
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
+    build: ./web
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/web:${TAG:-latest}
-    container_name: web_dev
+    env_file:
+      - path: ./.env
+        required: false
     ports:
       - "8090:80"
-    networks:
-      - appnet
-    environment:
-        NO_NAMING: true
-        REACT_APP_HOST_DOCKER_INTERNAL: host.docker.internal
     depends_on:
-      - naorobotapi
-      - skeletonfinderapi
       - translatorapi
-      
+      - audio-to-text-converter
+
   naorobotapi:
-    build:
-      context: ./services/naoRobotAPI
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    # Bundled NAOqi Python 2 native libraries are x86-64 only.
+    platform: linux/amd64
+    build: ./services/naoRobotAPI
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/nao-robot-api:${TAG:-latest}
-    command: python server.py
-    container_name: naorobotapi
-    env_file: ./services/.env
+    command: python server.py production
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
+      NAO_IP: ${NAO_IP:-host.docker.internal}
+      NAO_PORT: ${NAO_PORT:-9559}
     ports:
       - "5000:5000"
-    environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      HOST_PORT: ${HOST_PORT:-1234}
-      HOST_IP: ${HOST_IP:-127.0.0.1}
-      NAO_PORT: ${NAO_PORT:-9559}
-      NAO_IP: ${NAO_IP:-host.docker.internal}
-      FLASK_ENV: development
-    networks:
-      - appnet
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   skeletonfinderapi:
-    build:
-      context: ./services/skeletonFinderAPI
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    # The pinned MediaPipe release is distributed for x86-64 Linux.
+    platform: linux/amd64
+    build: ./services/skeletonFinderAPI
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/skeleton-finder-api:${TAG:-latest}
     command: python server.py
-    container_name: skeletonfinderapi
-    env_file: ./services/.env
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
     ports:
       - "6001:6001"
-    environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      FLASK_ENV: development
     volumes:
-      - /home/ubuntu/Pictures:/images:ro
-    networks:
-      - appnet
+      - ./images:/images:ro
 
   translatorapi:
-    build:
-      context: ./services/translator
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    build: ./services/translator
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/translator:${TAG:-latest}
     command: python nao_pose_service.py
-    container_name: translatorapi
-    env_file: ./services/.env
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
+      POSE_IMAGE_DIR: /images
     ports:
       - "7000:7000"
-    environment:
-      COMPOSE: true
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      FLASK_ENV: development
-      EXERCISE_CONFIG_URL: http://exerciseconfigservice:7001
     volumes:
-      - /home/ubuntu/Pictures:/home/ubuntu/Pictures
+      - ./images:/images
     depends_on:
       - naorobotapi
       - skeletonfinderapi
       - exercise-config-service
-    networks:
-      - appnet
 
   voicecommandapi:
-    build:
-      context: ./services/voiceCommandAPI
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    build: ./services/voiceCommandAPI
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/voice-command-api:${TAG:-latest}
-    container_name: voicecommandapi
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
     ports:
       - "8000:8000"
-    environment:
-      FLASK_ENV: development
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      NAO_SET_POSE_URL: http://naorobotapi:5000/setting_pose/setPose
     depends_on:
       - naorobotapi
-    networks:
-      - appnet
 
   exercise-config-service:
-    build:
-      context: ./services/exerciseConfigService
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    build: ./services/exerciseConfigService
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/exercise-config-service:${TAG:-latest}
     command: python run.py
-    container_name: exerciseconfigservice
-    env_file: ./services/.env
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
+      EXERCISES_DIR: /service/exercises
     ports:
       - "7001:7001"
-    environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      FLASK_ENV: development
-      EXERCISES_DIR: /service/exercises
-      VOICE_COMMAND_API_URL: http://voicecommandapi:8000
+    volumes:
+      - ${EXERCISES_HOST_DIR:-./exercises}:/service/exercises
     depends_on:
       - voicecommandapi
-    volumes:
-      - /home/ubuntu/exercises:/service/exercises
-    networks:
-      - appnet
+
   audio-to-text-converter:
-    build:
-      context: ./services/audioToTextConverter
-      dockerfile: Dockerfile
-      args:
-        NO_NAMING: false
+    # The pinned TorchCodec release has no ARM64 Linux wheel.
+    platform: linux/amd64
+    build: ./services/audioToTextConverter
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/audio-to-text-converter:${TAG:-latest}
     command: python text_from_audio_extractor_service.py
-    container_name: audiototextconverter
-    env_file: ./services/.env
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      COMPOSE_NETWORK: "true"
     ports:
       - "9901:9901"
-    environment:
-      HOST_DOCKER_INTERNAL: host.docker.internal
-      FLASK_ENV: development
-      EXERCISES_DIR: /service/exercises
-    depends_on:
-      - voicecommandapi
-    volumes:
-      - /home/ubuntu/exercises:/service/exercises
-    networks:
-      - appnet
-networks:
-  appnet:
-    driver: bridge

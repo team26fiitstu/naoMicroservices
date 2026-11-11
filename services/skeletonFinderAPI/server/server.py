@@ -1,3 +1,10 @@
+
+import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")))
+
 import sys
 from flask import Flask
 import flask_cors

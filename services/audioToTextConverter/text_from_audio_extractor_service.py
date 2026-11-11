@@ -6,8 +6,14 @@ Flask microservice that:
     - /translate/<audio_format>: extracts audio as text from audio file.
 
 """
-import base64
+
 import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
+
+import base64
 
 import flask_cors
 import whisperx

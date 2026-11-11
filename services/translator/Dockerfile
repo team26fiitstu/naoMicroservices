@@ -9,9 +9,8 @@ WORKDIR /app
 COPY . /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir flask requests flask-cors dotenv
+RUN pip install --no-cache-dir flask requests flask-cors python-dotenv==0.17.1
 
-ENV NO_NAMING $NO_NAMING
 
 # Expose API port
 EXPOSE 7000

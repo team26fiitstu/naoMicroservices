@@ -10,6 +10,11 @@ Flask microservice that:
 """
 
 import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
+
 import uuid
 import json
 
@@ -19,30 +24,16 @@ import requests
 from arms_translator import translate_arms
 from video_pose_processor import process_video_bytes
 from flask_cors import CORS
-from dotenv import load_dotenv
+from runtime_config import service_host
 
-load_dotenv()
-
-
-# =========================
-# CONFIG
-# =========================
-
-NO_NAMING = os.environ.get('NO_NAMING', True)
-if NO_NAMING:
-    POSE_API_URL = "http://localhost:6001/media_pipe_pose/pose_from_image"
-    SET_POSE_URL = "http://localhost:5000/setting_pose/setPose"
-    VOICE_LINES_URL = "http://localhost:5000/voiceLines/applyVoiceLine"
-    EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://localhost:7001")
-else:
-    POSE_API_URL = "http://skeletonfinderapi:6001/media_pipe_pose/pose_from_image"
-    SET_POSE_URL = "http://naorobotapi:5000/setting_pose/setPose"
-    VOICE_LINES_URL = "http://naorobotapi:5000/voiceLines/applyVoiceLine"
-    EXERCISE_CONFIG_URL = os.environ.get("EXERCISE_CONFIG_URL", "http://exerciseconfigservice:7001")
+POSE_API_URL = "http://%s:6001/media_pipe_pose/pose_from_image" % service_host("skeletonfinderapi")
+SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
+VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("naorobotapi")
+EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
 
 # Host directory mounted into pose container as /images
-POSE_HOST_ROOT = "/home/ubuntu/Pictures"      # host/VM path
-POSE_CONT_ROOT = "/images"                    # container path
+POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "images")))
+POSE_CONT_ROOT = os.environ.get("POSE_SERVICE_IMAGE_DIR", POSE_HOST_ROOT)
 
 # Subdir for single-image uploads (used by /arms/from_image)
 UPLOAD_SUBDIR = "nao_pose_uploads"

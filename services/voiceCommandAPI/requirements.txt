@@ -1,4 +1,4 @@
 flask
 flask-cors
 requests
-python-dotenv
+python-dotenv==0.17.1

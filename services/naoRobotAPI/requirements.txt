@@ -1,5 +1,4 @@
 urllib3
-dotenv
-python-dotenv
 flask
 flask-cors
+python-dotenv==0.17.1

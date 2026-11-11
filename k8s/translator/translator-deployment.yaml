@@ -31,8 +31,12 @@ spec:
           env:
             - name: FLASK_ENV
               value: "production"
-            - name: EXERCISE_CONFIG_URL
-              value: "http://exercise-config-service:7001"
+            - name: COMPOSE_NETWORK
+              value: "true"
+            - name: POSE_IMAGE_DIR
+              value: "/home/ubuntu/Pictures"
+            - name: POSE_SERVICE_IMAGE_DIR
+              value: "/images"
           readinessProbe:
             httpGet:
               path: /test

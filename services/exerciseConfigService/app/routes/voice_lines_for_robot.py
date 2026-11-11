@@ -4,7 +4,6 @@ import requests
 from flask import Blueprint, request, jsonify, send_file
 import io
 
-from dotenv import load_dotenv
 from app.storage import (
     exercise_exists,
     get_frame,
@@ -18,7 +17,6 @@ from app.voice_lines import (
     delete_voice_lines_sound,
     insert_voice_lines_sound
 )
-load_dotenv()
 voice_lines_bp = Blueprint("voiceLines", __name__, url_prefix="/voiceLines")
 
 # ---------------------------------------------------------------------------

@@ -12,28 +12,19 @@ Routes:
 """
 
 import os
+from dotenv import load_dotenv
+
+# Load only the repository root file; container environment takes precedence.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
+
 import requests
 from flask import Flask, request, jsonify, send_from_directory
 import flask_cors
 
 from pose_registry import resolve, list_commands
-from dotenv import load_dotenv
+from runtime_config import service_host
 
-load_dotenv()
-
-LOCAL = os.environ.get('LOCAL', True)
-if LOCAL:
-    NAO_SET_POSE_URL = os.environ.get(
-        "NAO_SET_POSE_URL",
-        "http://localhost:5000/setting_pose/setPose",
-    )
-else:
-    NAO_SET_POSE_URL = os.environ.get(
-        "NAO_SET_POSE_URL",
-        "http://naorobotapi:5000/setting_pose/setPose",
-    )
-
-
+NAO_SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
 
 IMAGES_DIR = os.path.join(os.path.dirname(__file__), "images")
 

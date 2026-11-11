@@ -50,6 +50,5 @@ RUN pip install -r requirements.txt
 #RUN sudo apt install cmake
 #python ./robot_module_testing/test.py
 
-ENV NO_NAMING $NO_NAMING
 
 CMD [ "python", "server.py" ]
