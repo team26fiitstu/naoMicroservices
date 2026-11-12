@@ -17,7 +17,7 @@ setting_pose_api = Blueprint("setting_pose_api", __name__, template_folder="temp
 
 @setting_pose_api.route("/setPose", methods=["POST"])
 def set_pose():
-    data = request.get_json(silent=True)
+    data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict) or not isinstance(data.get("angles"), list) or len(data["angles"]) != 22:
         return application_json_response({"error": "angles must be a list of 22 values"}, 400)
     angles = data["angles"]

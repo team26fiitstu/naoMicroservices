@@ -1,6 +1,7 @@
 """Offline Flask route tests. This directory is the explicit safe discovery target."""
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -283,6 +284,25 @@ class RobotRoutes(OfflineCase):
         FakeProxy.fail_on_motion = True
         self.assertEqual(self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22}).status_code, 500)
         self.assertEqual(fake_proxies[0].service, "ALMotion")
+
+    def test_json_without_json_content_type(self):
+        # Both routes accepted JSON regardless of Content-Type before input validation was added.
+        from robot.voice_lines import voice_lines_api
+        pose = self.client.post(
+            "/setting_pose/setPose",
+            data=json.dumps({"angles": [0.1] * 22}),
+            content_type="text/plain",
+        )
+        self.assertEqual(pose.status_code, 200)
+        self.assertEqual(fake_proxies[0].service, "ALMotion")
+        with patch.object(voice_lines_api, "set_voice_lines") as speak:
+            voice = self.client.post(
+                "/voiceLines/applyVoiceLine",
+                data=json.dumps({"voice_lines": {"lang": "English"}}),
+                content_type="text/plain",
+            )
+        self.assertEqual(voice.status_code, 200)
+        speak.assert_called_once_with({"lang": "English"})
 
     def test_voice_and_legacy_pose_routes(self):
         from robot.voice_lines import voice_lines_api

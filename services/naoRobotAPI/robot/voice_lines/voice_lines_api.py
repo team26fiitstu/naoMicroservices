@@ -17,7 +17,7 @@ voice_lines_api = Blueprint("voice_lines_api", __name__, template_folder="templa
 
 @voice_lines_api.route("/applyVoiceLine", methods=["POST"])
 def set_pose():
-    data = request.get_json(silent=True)
+    data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict) or not isinstance(data.get("voice_lines"), dict):
         return application_json_response({"error": "voice_lines must be an object"}, 400)
     voice_lines_config = data["voice_lines"]
