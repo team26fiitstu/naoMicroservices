@@ -182,6 +182,18 @@ class TranslatorRoutes(OfflineCase):
                 with patch.object(translator, "process_video_bytes", side_effect=requests.Timeout("pose")), patch.object(translator.os, "makedirs"):
                     self.assertEqual(self.upload(route, "video").status_code, 502)
 
+    def test_video_max_frames_preserves_saved_payload(self):
+        summary = dict(SUMMARY, valid_frames=2, valid_landmarks=[LANDMARKS, LANDMARKS], valid_image_paths=[])
+        with patch.object(translator, "process_video_bytes", return_value=summary) as process, patch.object(translator, "translate_arms", return_value=ANGLES), patch.object(translator, "call_exercise_create", return_value={"id": "ex1"}) as create:
+            result = self.upload("/exercise/from_video", "video", data=b"video-bytes", fps="2", seconds="5", max_frames="1", name="demo")
+        self.assertEqual(result.status_code, 201)
+        self.assertEqual(len(create.call_args.kwargs["frames"]), 1)
+        self.assertEqual(create.call_args.kwargs["frames"][0]["nao_angles"], ANGLES["angles"])
+        self.assertEqual(create.call_args.kwargs["media_bytes"], b"video-bytes")
+        self.assertEqual(create.call_args.kwargs["name"], "demo")
+        self.assertEqual(process.call_args.kwargs["number_frames_per_sec"], 2)
+        self.assertEqual(process.call_args.kwargs["number_seconds_to_process"], 5)
+
     def test_run_exercise(self):
         frames = [{"frame_index": 0, "nao_angles": [0.1] * 22}]
         with patch.object(translator.requests, "get", side_effect=[response(frames), response({"repetitions": 2})]), patch.object(translator, "call_nao_set_pose", return_value={"success": True}) as nao:
@@ -199,6 +211,18 @@ class TranslatorRoutes(OfflineCase):
             result = self.client.post("/exercise/ex1/run", json={"repetitions": 1})
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json["results"][0]["status"], "error")
+
+    def test_run_preserves_stored_sequence_with_repeated_frames(self):
+        frames = [
+            {"frame_index": 1, "nao_angles": [0.1] * 22, "voice_lines": {"lang": "English"}},
+            {"frame_index": 0, "nao_angles": [0.2] * 22},
+            {"frame_index": 1, "nao_angles": [0.1] * 22},
+        ]
+        with patch.object(translator.requests, "get", return_value=response(frames)), patch.object(translator, "call_nao_set_pose", return_value={"success": True}) as move, patch.object(translator, "call_nao_voice_lines", return_value={"success": True}) as speak:
+            result = self.client.post("/exercise/ex1/run", json={"repetitions": 1})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual([call.args[0] for call in move.call_args_list], [[0.1] * 22, [0.2] * 22, [0.1] * 22])
+        speak.assert_called_once_with({"lang": "English"})
 
     def test_crud_proxies(self):
         cases = (
@@ -244,6 +268,19 @@ class SkeletonRoutes(OfflineCase):
                 with patch.object(module, function, side_effect=ValueError("bad media")):
                     self.assertEqual(self.client.post(path, data=b"bad").status_code, 500)
 
+    def test_pose_options_reach_model_stubs(self):
+        with patch.object(mediapipe, "evaluate_pose_mediapipe", return_value={}) as model:
+            result = self.client.post("/media_pipe_pose/pose_from_image?min_detection_confidence=0.7&attach_visualization=1", data="encoded")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(model.call_args.args[0], "encoded")
+        self.assertEqual(model.call_args.kwargs["min_detection_confidence"], 0.7)
+        self.assertTrue(model.call_args.kwargs["attach_visualization"])
+        with patch.object(yolo, "evaluate_yolo_pose_from_video", return_value=[]) as model:
+            result = self.client.post("/yolo_pose/pose_from_video?number_frames_per_sec=2&number_seconds_to_process=5", data="encoded")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(model.call_args.kwargs["number_frames_per_sec"], 2)
+        self.assertEqual(model.call_args.kwargs["number_seconds_to_process"], 5)
+
     def test_get_pose_routes_and_missing_path(self):
         cases = (
             ("/media_pipe_pose/pose_from_image", mediapipe, "evaluate_pose_mediapipe", {"joint": 1}),
@@ -276,6 +313,8 @@ class RobotRoutes(OfflineCase):
         self.assertEqual((result.status_code, result.json), (200, {"success": True}))
         self.assertEqual(fake_proxies[0].service, "ALMotion")
         self.assertEqual([name for name, _ in fake_proxies[0].calls], ["stiffnessInterpolation", "angleInterpolation"])
+        self.assertEqual(len(fake_proxies[0].calls[1][1][0]), 22)
+        self.assertEqual(fake_proxies[0].calls[1][1][1], [0.1] * 22)
         fake_proxies[:] = []
         for payload in ({}, {"angles": [1]}, {"angles": "bad"}):
             self.assertEqual(self.client.post("/setting_pose/setPose", json=payload).status_code, 400)
