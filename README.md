@@ -38,7 +38,7 @@ python3 -m venv /tmp/nao-offline-venv
 /tmp/nao-offline-venv/bin/python -m pytest -q tests/offline services/translator/tests/test_arms_translator.py tests/test_environment.py
 ```
 
-The final command is the complete offline test run. It uses Flask test clients and a fake NAO interface installed before robot modules are imported. It excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
+The final command is the complete offline test run. HTTP tests are grouped by service in `tests/offline/test_translator_routes.py`, `test_skeleton_routes.py`, and `test_robot_routes.py`. They use Flask test clients and a fake NAO interface installed before robot modules are imported. The run excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
 
 # Docker Compose
 
