@@ -26,4 +26,4 @@ jobs:
         run: python -m pip install -r tests/requirements-offline.txt
 
       - name: Run offline tests
-        run: python -m pytest -q tests/test_environment.py services/translator/tests/test_arms_translator.py services/translator/tests/test_translator_routes.py services/naoRobotAPI/tests/test_robot_routes.py services/skeletonFinderAPI/tests/test_skeleton_routes.py
+        run: python -m pytest -q

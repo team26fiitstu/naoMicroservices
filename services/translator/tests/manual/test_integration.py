@@ -14,7 +14,7 @@ import pytest
 
 TRANSLATOR = "http://localhost:7000"
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 IMAGE_PATH = os.path.join(PROJECT_ROOT, "frame_5.jpg")
 VIDEO_PATH = os.path.join(PROJECT_ROOT, "video_2.mp4")
 
