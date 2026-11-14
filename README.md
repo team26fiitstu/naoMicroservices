@@ -34,11 +34,11 @@ From the repository root, use Python 3.12 and an isolated environment. Only Flas
 
 ```sh
 python3 -m venv /tmp/nao-offline-venv
-/tmp/nao-offline-venv/bin/python -m pip install -r tests/offline/requirements.txt
-/tmp/nao-offline-venv/bin/python -m pytest -q tests/offline services/translator/tests/test_arms_translator.py tests/test_environment.py
+/tmp/nao-offline-venv/bin/python -m pip install -r tests/requirements-offline.txt
+/tmp/nao-offline-venv/bin/python -m pytest -q tests/test_environment.py services/translator/tests/test_arms_translator.py services/translator/tests/test_translator_routes.py services/naoRobotAPI/tests/test_robot_routes.py services/skeletonFinderAPI/tests/test_skeleton_routes.py
 ```
 
-The final command is the complete offline test run. HTTP tests are grouped by service in `tests/offline/test_translator_routes.py`, `test_skeleton_routes.py`, and `test_robot_routes.py`. They use Flask test clients and a fake NAO interface installed before robot modules are imported. The run excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
+The final command is the complete offline test run. Service tests live beside their services; shared test helpers and repository-wide configuration tests live in `tests/`. The HTTP tests use Flask test clients and a fake NAO interface installed before robot modules are imported. The run excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
 
 # Docker Compose
 
