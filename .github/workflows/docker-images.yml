@@ -22,18 +22,32 @@ jobs:
         include:
           - image: web
             context: ./web
+            extra_paths: ''
+            build_contexts: ''
           - image: nao-robot-api
             context: ./services/naoRobotAPI
+            extra_paths: ''
+            build_contexts: ''
           - image: skeleton-finder-api
             context: ./services/skeletonFinderAPI
+            extra_paths: ''
+            build_contexts: ''
           - image: translator
             context: ./services/translator
+            extra_paths: 'services/common/**'
+            build_contexts: 'common=./services/common'
           - image: voice-command-api
             context: ./services/voiceCommandAPI
+            extra_paths: 'services/common/**'
+            build_contexts: 'common=./services/common'
           - image: exercise-config-service
             context: ./services/exerciseConfigService
+            extra_paths: 'services/common/**'
+            build_contexts: 'common=./services/common'
           - image: audio-to-text-converter
             context: ./services/audioToTextConverter
+            extra_paths: ''
+            build_contexts: ''
 
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +59,7 @@ jobs:
           filters: |
             changed:
               - '${{ matrix.context }}/**'
+              - '${{ matrix.extra_paths }}'
               - '.github/workflows/docker-images.yml'
 
       - uses: docker/setup-buildx-action@v3
@@ -70,6 +85,7 @@ jobs:
         if: steps.filter.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         with:
           context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build_contexts }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

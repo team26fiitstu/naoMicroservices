@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Shared modules live outside this build context (named context "common")
+COPY --from=common /http_retry.py .
+
 # exercises folder lives inside the service — no volume mount needed
 RUN mkdir -p /service/exercises
 

@@ -211,18 +211,16 @@ def test_explicit_override_beats_env(monkeypatch):
     assert mock_get.call_count == 2
 
 
-def test_module_duplication_matches():
-    """The helper must be identical in all services that use it."""
+def test_shared_module_source_of_truth():
+    """http_retry.py must live in services/common, not be duplicated per service."""
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    paths = [
-        os.path.join(root, "services", "translator", "http_retry.py"),
-        os.path.join(root, "services", "voiceCommandAPI", "http_retry.py"),
-        os.path.join(root, "services", "exerciseConfigService", "http_retry.py"),
-    ]
-    if not all(os.path.exists(p) for p in paths):
-        pytest.skip("http_retry.py copies not present (single-service container)")
-    with open(paths[0], "rb") as f:
-        reference = f.read()
-    for path in paths[1:]:
-        with open(path, "rb") as f:
-            assert f.read() == reference, f"{path} differs from translator copy"
+    module_dir = os.path.dirname(os.path.abspath(http_retry.__file__))
+    # the module we imported resolves to a shared "common" directory
+    assert os.path.basename(module_dir) == "common"
+    # inside the repository that directory is services/common
+    if os.path.isdir(os.path.join(root, "services", "common")):
+        assert module_dir == os.path.join(root, "services", "common")
+    # no per-service copies remain
+    for service in ("translator", "voiceCommandAPI", "exerciseConfigService"):
+        stale = os.path.join(root, "services", service, "http_retry.py")
+        assert not os.path.exists(stale), f"remove duplicated copy: {stale}"

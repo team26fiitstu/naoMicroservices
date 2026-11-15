@@ -46,7 +46,10 @@ services:
       - ./images:/images:ro
 
   translatorapi:
-    build: ./services/translator
+    build:
+      context: ./services/translator
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     env_file:
@@ -65,7 +68,10 @@ services:
       - exercise-config-service
 
   voicecommandapi:
-    build: ./services/voiceCommandAPI
+    build:
+      context: ./services/voiceCommandAPI
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/voice-command-api:${TAG:-latest}
     env_file:
       - path: ./.env
@@ -78,7 +84,10 @@ services:
       - naorobotapi
 
   exercise-config-service:
-    build: ./services/exerciseConfigService
+    build:
+      context: ./services/exerciseConfigService
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/exercise-config-service:${TAG:-latest}
     command: python run.py
     env_file:

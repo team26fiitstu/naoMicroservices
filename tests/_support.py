@@ -9,6 +9,11 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Modules shared between services (http_retry) live outside each service dir.
+COMMON_DIR = ROOT / "services" / "common"
+if COMMON_DIR.is_dir() and str(COMMON_DIR) not in sys.path:
+    sys.path.insert(0, str(COMMON_DIR))
+
 
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)

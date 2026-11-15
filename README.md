@@ -13,6 +13,7 @@ naoMicroservices/
 ├── scripts/                        # Utility and helper scripts
 ├── services/                       # Backend microservices
 │   ├── audioToTextConverter/
+│   ├── common/                     # Shared modules copied into service images
 │   ├── exerciseConfigService/
 │   ├── naoRobotAPI/
 │   ├── skeletonFinderAPI/
@@ -93,6 +94,12 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | `HTTP_RETRY_STATUS_CODES` | HTTP statuses that trigger a retry (comma-separated) | `429,500,502,503,504` |
 
 Compose and Python service entry points read the root `.env` automatically; existing process variables take precedence. Without Docker, NAO API maps `host.docker.internal` to `127.0.0.1` for Choregraphe.
+
+Shared Python modules live in `services/common/` (currently `http_retry.py`). The Docker builds of `translatorapi`, `voicecommandapi`, and `exercise-config-service` copy them from the named build context `common` into each image. When running a service directly without Docker, add `services/common` to `PYTHONPATH`:
+
+```sh
+PYTHONPATH=services/common python services/translator/nao_pose_service.py
+```
 
 All HTTP calls between services go through a shared retry helper: a temporarily unavailable peer is retried `HTTP_RETRY_MAX_ATTEMPTS` times with an exponentially growing delay. When every attempt fails, a clear error is logged and returned to the caller (typically as `502` with the failure detail).
 
