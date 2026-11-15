@@ -16,6 +16,7 @@ from typing import Dict, Any, List
 
 import requests
 from runtime_config import service_host
+from http_retry import request_with_retries
 
 POSE_FROM_VIDEO_URL = "http://%s:6001/media_pipe_pose/pose_from_video" % service_host("skeletonfinderapi")
 
@@ -79,7 +80,8 @@ def process_video_bytes(
     # 1) Call pose_from_video
     encoded_video = base64.b64encode(video_bytes).decode("utf-8")
 
-    resp = requests.post(
+    resp = request_with_retries(
+        "POST",
         POSE_FROM_VIDEO_URL,
         params={
             "number_frames_per_sec": number_frames_per_sec,

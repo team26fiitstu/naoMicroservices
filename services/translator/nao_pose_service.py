@@ -25,6 +25,7 @@ from arms_translator import translate_arms
 from video_pose_processor import process_video_bytes
 from flask_cors import CORS
 from runtime_config import service_host
+from http_retry import request_with_retries
 
 POSE_API_URL = "http://%s:6001/media_pipe_pose/pose_from_image" % service_host("skeletonfinderapi")
 SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
@@ -56,7 +57,7 @@ def call_pose_service(container_path: str):
     (as seen inside the pose container) and return landmarks.
     """
     params = {"file_location": container_path}
-    resp = requests.get(POSE_API_URL, params=params, timeout=15)
+    resp = request_with_retries("GET", POSE_API_URL, params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
@@ -95,7 +96,7 @@ def call_exercise_create(name, frames, pose_engine="mediapipe", media_bytes=None
         ext = media_ext if media_ext.startswith(".") else f".{media_ext}"
         data["media"] = (f"original{ext}", media_bytes, "application/octet-stream")
 
-    resp = requests.post(f"{EXERCISE_CONFIG_URL}/exercise/create", files=data, timeout=30)
+    resp = request_with_retries("POST", f"{EXERCISE_CONFIG_URL}/exercise/create", files=data, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -105,7 +106,7 @@ def call_nao_set_pose(angles):
     Call NAO pose endpoint with the given angles.
     """
     payload = {"angles": angles}
-    resp = requests.post(SET_POSE_URL, json=payload, timeout=15)
+    resp = request_with_retries("POST", SET_POSE_URL, json=payload, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
@@ -115,7 +116,7 @@ def call_nao_voice_lines(voice_lines_configs):
     Call NAO to say voice line.
     """
     payload = {"voice_lines": voice_lines_configs}
-    resp = requests.post(VOICE_LINES_URL, json=payload, timeout=15)
+    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, timeout=15)
     resp.raise_for_status()
     return resp.json()
     
@@ -209,7 +210,8 @@ def exercise_from_image():
     import base64
     try:
         encoded = base64.b64encode(image_bytes).decode("utf-8")
-        resp = requests.post(
+        resp = request_with_retries(
+            "POST",
             POSE_API_URL,
             data=encoded,
             headers={"Content-Type": "text/plain"},
@@ -357,7 +359,7 @@ def exercise_run(exercise_id):
 
     # 1) Fetch frames from exerciseconfigservice
     try:
-        resp = requests.get(f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
         if resp.status_code == 404:
             return jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404
         resp.raise_for_status()
@@ -372,7 +374,7 @@ def exercise_run(exercise_id):
     repetitions = data.get("repetitions")
     if repetitions is None:
         try:
-            cfg_resp = requests.get(f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+            cfg_resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
             cfg_resp.raise_for_status()
             repetitions = cfg_resp.json().get("repetitions", 1)
         except requests.RequestException as e:
@@ -502,7 +504,8 @@ def exercise_from_video():
     for frame_index, img_path in enumerate(summary["valid_image_paths"]):
         try:
             with open(img_path, "rb") as img_file:
-                requests.post(
+                request_with_retries(
+                    "POST",
                     f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frame/{frame_index}/image",
                     files={"image": ("frame.png", img_file, "image/png")},
                     timeout=10,
@@ -637,25 +640,26 @@ def arms_from_video():
 
 @app.route("/exercise/list", methods=["GET"])
 def exercise_list():
-    resp = requests.get(f"{EXERCISE_CONFIG_URL}/exercise/list", timeout=10)
+    resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/list", timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 
 @app.route("/exercise/<exercise_id>", methods=["GET"])
 def exercise_get(exercise_id):
-    resp = requests.get(f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+    resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 
 @app.route("/exercise/<exercise_id>", methods=["DELETE"])
 def exercise_delete(exercise_id):
-    resp = requests.delete(f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+    resp = request_with_retries("DELETE", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 
 @app.route("/exercise/<exercise_id>/config", methods=["PUT"])
 def exercise_patch_config(exercise_id):
-    resp = requests.put(
+    resp = request_with_retries(
+        "PUT",
         f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/config",
         json=request.get_json(silent=True) or {},
         timeout=10,
@@ -665,13 +669,14 @@ def exercise_patch_config(exercise_id):
 
 @app.route("/exercise/<exercise_id>/frames", methods=["GET"])
 def exercise_get_frames(exercise_id):
-    resp = requests.get(f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+    resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 
 @app.route("/exercise/<exercise_id>/sequence", methods=["PUT"])
 def exercise_patch_sequence(exercise_id):
-    resp = requests.put(
+    resp = request_with_retries(
+        "PUT",
         f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/sequence",
         json=request.get_json(silent=True) or {},
         timeout=10,
