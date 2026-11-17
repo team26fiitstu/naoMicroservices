@@ -4,7 +4,7 @@ import sys
 import types
 from unittest.mock import Mock, patch
 
-from _support import OfflineCase, ROOT, load_module
+from tests._support import OfflineCase, ROOT, load_module
 
 
 # The NAOqi interface is installed before *any* robot module is imported.

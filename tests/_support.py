@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_module(name, path):
