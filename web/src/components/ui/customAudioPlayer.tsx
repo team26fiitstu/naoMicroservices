@@ -3,9 +3,8 @@ import { audioBufferToWebMBlob } from "./webmAudio";
 import { standardButtonColor, standardButtonHeight, secondaryButtonColor} from "@/components/styles/styles";
 import { Button } from "@/components/ui/button";
 import { Trash2, Loader2, Pickaxe, ArrowRight } from "lucide-react";
+import { API_BASE } from '@/lib/api';
 
-// ── API config ────────────────────────────────────────────────────
-const TO_TEXT_API = "http://localhost:9901";
 
 export function CustomAudioPlayer({url, keyID, index, blob, defaultText,
                             overallRecordedMessage, onOverallRecordedMessageChange, 
@@ -131,7 +130,7 @@ export function CustomAudioPlayer({url, keyID, index, blob, defaultText,
         try {
             const audioInBase64 = reader.result.replaceAll("data:audio/*;base64,","");
             console.log({ "audio_file": audioInBase64, "lang": languageVoice, "speed": speedVoice, "model": "large-v1" });
-            const res = await fetch(`${TO_TEXT_API}/translate/webm`, {
+            const res = await fetch(`${API_BASE}/translate/webm`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json"
@@ -176,7 +175,7 @@ export function CustomAudioPlayer({url, keyID, index, blob, defaultText,
     if (!keyID) return;
     setDeleting(frameIdx);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${keyID}/frame/${frameIdx}`, {
+      const res = await fetch(`${API_BASE}/exercise/${keyID}/frame/${frameIdx}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

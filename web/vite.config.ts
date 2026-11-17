@@ -16,26 +16,20 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Upload + run → translatorapi
-      "/exercise/from_video": {
-        target: "http://localhost:7000",
-        changeOrigin: true,
-      },
-      // run endpoint: /exercise/<id>/run
-      "^/exercise/[^/]+/run$": {
-        target: "http://localhost:7000",
-        changeOrigin: true,
-      },
-      // frames, sequence, images → exerciseconfigservice
-      "/exercise": {
-        target: "http://localhost:7001",
-        changeOrigin: true,
-      },
-      // voice command / pose registry
-      "/commands": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-      },
+      // translator
+      "/exercise/from_video": { target: "http://localhost:7000", changeOrigin: true },
+      "/exercise/from_image": { target: "http://localhost:7000", changeOrigin: true },
+      "^/exercise/[^/]+/run$": { target: "http://localhost:7000", changeOrigin: true },
+      // robot: must be above "/voiceLines"
+      "/voiceLines/applyVoiceLine": { target: "http://localhost:5000", changeOrigin: true },
+      // exercise config service
+      "/voiceLines": { target: "http://localhost:7001", changeOrigin: true },
+      "/exercise": { target: "http://localhost:7001", changeOrigin: true },
+      // voice command API
+      "/commands": { target: "http://localhost:8000", changeOrigin: true },
+      "/pose": { target: "http://localhost:8000", changeOrigin: true },
+      // audio to text
+      "/translate": { target: "http://localhost:9901", changeOrigin: true },
     },
-  }
+  },
 });
