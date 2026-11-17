@@ -3,7 +3,7 @@ import sys
 import types
 from unittest.mock import Mock, patch
 
-from _support import OfflineCase, ROOT, load_module
+from tests._support import OfflineCase, ROOT, load_module
 
 # Model modules are replaced before the skeleton server imports its blueprints.
 SKELETON_DIR = ROOT / "services/skeletonFinderAPI/server"

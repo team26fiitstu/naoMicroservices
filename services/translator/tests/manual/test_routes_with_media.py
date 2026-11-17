@@ -9,7 +9,7 @@ import sys
 import os
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import nao_pose_service as svc
 
@@ -17,7 +17,7 @@ import nao_pose_service as svc
 # Test assets — real files from project root
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 IMAGE_PATH = os.path.join(PROJECT_ROOT, "frame_5.jpg")
 VIDEO_PATH = os.path.join(PROJECT_ROOT, "video_2.mp4")
 

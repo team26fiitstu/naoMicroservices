@@ -30,15 +30,15 @@ naoMicroservices/
 
 # Autonomous Python tests
 
-From the repository root, use Python 3.12 and an isolated environment. Only Flask, HTTP client, Pillow, dotenv, and pytest are needed; pose model and NAOqi packages are replaced with test stubs.
+From the repository root, run the offline tests with Python 3.12:
 
 ```sh
 python3 -m venv /tmp/nao-offline-venv
-/tmp/nao-offline-venv/bin/python -m pip install -r tests/offline/requirements.txt
-/tmp/nao-offline-venv/bin/python -m pytest -q tests/offline services/translator/tests/test_arms_translator.py tests/test_environment.py
+/tmp/nao-offline-venv/bin/python -m pip install -r tests/requirements-offline.txt
+/tmp/nao-offline-venv/bin/python -m pytest -q
 ```
 
-The final command is the complete offline test run. HTTP tests are grouped by service in `tests/offline/test_translator_routes.py`, `test_skeleton_routes.py`, and `test_robot_routes.py`. They use Flask test clients and a fake NAO interface installed before robot modules are imported. The run excludes `services/translator/tests/test_integration.py`, the older route tests requiring missing root-level media files, and the robot/model test scripts that require running services, models, or hardware. It never connects to a physical robot.
+`pytest.ini` discovers tests in `tests/` and `services/*/tests/`. Tests in `manual/` need a prepared environment and are excluded. The offline suite uses stubs and does not connect to a robot.
 
 # Docker Compose
 

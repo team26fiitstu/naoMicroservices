@@ -6,7 +6,7 @@ from unittest.mock import patch
 import requests
 from werkzeug.datastructures import FileStorage
 
-from _support import OfflineCase, ROOT, load_module, response
+from tests._support import OfflineCase, ROOT, load_module, response
 
 TRANSLATOR_DIR = ROOT / "services/translator"
 sys.path.insert(0, str(TRANSLATOR_DIR))
