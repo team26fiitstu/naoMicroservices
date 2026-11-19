@@ -140,7 +140,6 @@ k8s-apply: ## Apply k8s manifests without pushing (use local images)
 	@echo "Applying k8s manifests..."
 	kubectl apply -R -f k8s/
 	@kubectl wait --for=condition=available deployment/web-deployment --timeout=120s 2>/dev/null || true
-	@kubectl wait --for=condition=available deployment/team19-web-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/naorobotapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/skeletonfinderapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
@@ -152,7 +151,6 @@ k8s-deploy: push-all ## Push images and deploy all services to Kubernetes
 	@echo "Deploying to Kubernetes..."
 	kubectl apply -R -f k8s/
 	@kubectl wait --for=condition=available deployment/web-deployment --timeout=120s 2>/dev/null || true
-	@kubectl wait --for=condition=available deployment/team19-web-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/naorobotapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/skeletonfinderapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
@@ -166,7 +164,6 @@ k8s-delete: ## Delete all Kubernetes resources
 
 k8s-logs: ## Print logs from all Kubernetes pods
 	@kubectl logs -l app=web --tail=100 || true
-	@kubectl logs -l app=team19-web --tail=100 || true
 	@kubectl logs -l app=naorobotapi --tail=100 || true
 	@kubectl logs -l app=skeletonfinderapi --tail=100 || true
 	@kubectl logs -l app=translator --tail=100 || true
@@ -182,7 +179,6 @@ k8s-get-urls: ## Show all Kubernetes service URLs
 
 k8s-restart: ## Restart all Kubernetes deployments
 	@kubectl rollout restart deployment web-deployment || true
-	@kubectl rollout restart deployment team19-web-deployment || true
 	@kubectl rollout restart deployment naorobotapi-deployment || true
 	@kubectl rollout restart deployment skeletonfinderapi-deployment || true
 	@kubectl rollout restart deployment translator-deployment || true
