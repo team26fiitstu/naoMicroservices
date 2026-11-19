@@ -107,15 +107,20 @@ dev-restart: dev-down dev-up ## Restart dev environment
 # ------------------------------------------
 #                 TESTING
 # ------------------------------------------
-test: ## Test all services locally
+test: ## Test all services locally (fails if any service is down)
 	@echo "Testing services..."
-	@curl -sSf http://localhost:8090/ >/dev/null && echo "✓ web (8090)" || echo "✗ web"
-	@curl -sSf http://localhost:5000/ >/dev/null && echo "✓ nao-robot-api (5000)" || echo "✗ nao-robot-api"
-	@curl -sSf http://localhost:6001/ >/dev/null && echo "✓ skeleton-finder-api (6001)" || echo "✗ skeleton-finder-api"
-	@curl -sSf http://localhost:7000/test >/dev/null && echo "✓ translator (7000)" || echo "✗ translator"
-	@curl -sSf http://localhost:8000/ >/dev/null && echo "✓ voice-command-api (8000)" || echo "✗ voice-command-api"
-	@curl -sSf http://localhost:7001/health >/dev/null && echo "✓ exercise-config-service (7001)" || echo "✗ exercise-config-service"
-	@curl -sSf http://localhost:9901/test >/dev/null && echo "✓ audio-to-text-converter (9901)" || echo "✗ audio-to-text-converter"
+	@failed=0; \
+	check() { \
+		if curl -sSf "$$2" >/dev/null; then echo "✓ $$1"; else echo "✗ $$1"; failed=1; fi; \
+	}; \
+	check "web (8090)" http://localhost:8090/; \
+	check "nao-robot-api (5000)" http://localhost:5000/; \
+	check "skeleton-finder-api (6001)" http://localhost:6001/; \
+	check "translator (7000)" http://localhost:7000/test; \
+	check "voice-command-api (8000)" http://localhost:8000/; \
+	check "exercise-config-service (7001)" http://localhost:7001/health; \
+	check "audio-to-text-converter (9901)" http://localhost:9901/test; \
+	exit $$failed
 
 # ------------------------------------------
 #                 CLEANUP
@@ -161,6 +166,11 @@ k8s-deploy: push-all ## Push images and deploy all services to Kubernetes
 k8s-delete: ## Delete all Kubernetes resources
 	@echo "Removing from Kubernetes..."
 	kubectl delete -R -f k8s/ --ignore-not-found=true
+
+k8s-cleanup-team19-web: ## One-time removal of legacy team19-web resources from an existing cluster
+	@echo "Removing legacy team19-web resources..."
+	kubectl delete deployment team19-web-deployment --ignore-not-found=true
+	kubectl delete service team19-web-service team19-web --ignore-not-found=true
 
 k8s-logs: ## Print logs from all Kubernetes pods
 	@kubectl logs -l app=web --tail=100 || true
