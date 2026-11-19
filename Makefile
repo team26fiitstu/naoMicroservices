@@ -63,12 +63,12 @@ dev-start: ## Start dev environment from existing images (no build)
 	@echo ""
 	@echo "🌐 Services:"
 	@echo "  - web:                http://localhost:8090"
-	@echo "  - team19-web:         http://localhost:3000"
 	@echo "  - nao-robot-api:      http://localhost:5000"
 	@echo "  - skeleton-finder-api: http://localhost:6001"
 	@echo "  - translator:         http://localhost:7000"
 	@echo "  - voice-command-api:  http://localhost:8000"
 	@echo "  - exercise-config:    http://localhost:7001"
+	@echo "  - audio-to-text:      http://localhost:9901"
 
 dev-start-%: ## Start a single service from existing image (usage: make dev-start-web)
 	docker compose -f docker-compose.dev.yml up -d $(call runtime_service,$*)
@@ -79,12 +79,12 @@ dev-up: build-all ## Start development environment (build + run)
 	@echo ""
 	@echo "🌐 Services:"
 	@echo "  - web:                http://localhost:8090"
-	@echo "  - team19-web:         http://localhost:3000"
 	@echo "  - nao-robot-api:      http://localhost:5000"
 	@echo "  - skeleton-finder-api: http://localhost:6001"
 	@echo "  - translator:         http://localhost:7000"
 	@echo "  - voice-command-api:  http://localhost:8000"
 	@echo "  - exercise-config:    http://localhost:7001"
+	@echo "  - audio-to-text:      http://localhost:9901"
 
 dev-up-%: build-% ## Start only one dev service (usage: make dev-up-web)
 	@echo "Starting development environment for $*..."
@@ -109,13 +109,13 @@ dev-restart: dev-down dev-up ## Restart dev environment
 # ------------------------------------------
 test: ## Test all services locally
 	@echo "Testing services..."
-	@curl -sSf http://localhost:8090/ >/dev/null && echo "✓ web (8080)" || echo "✗ web"
-	@curl -sSf http://localhost:3000/ >/dev/null && echo "✓ team19-web (3000)" || echo "✗ team19-web"
+	@curl -sSf http://localhost:8090/ >/dev/null && echo "✓ web (8090)" || echo "✗ web"
 	@curl -sSf http://localhost:5000/ >/dev/null && echo "✓ nao-robot-api (5000)" || echo "✗ nao-robot-api"
 	@curl -sSf http://localhost:6001/ >/dev/null && echo "✓ skeleton-finder-api (6001)" || echo "✗ skeleton-finder-api"
 	@curl -sSf http://localhost:7000/test >/dev/null && echo "✓ translator (7000)" || echo "✗ translator"
 	@curl -sSf http://localhost:8000/ >/dev/null && echo "✓ voice-command-api (8000)" || echo "✗ voice-command-api"
 	@curl -sSf http://localhost:7001/health >/dev/null && echo "✓ exercise-config-service (7001)" || echo "✗ exercise-config-service"
+	@curl -sSf http://localhost:9901/test >/dev/null && echo "✓ audio-to-text-converter (9901)" || echo "✗ audio-to-text-converter"
 
 # ------------------------------------------
 #                 CLEANUP
@@ -143,7 +143,7 @@ k8s-apply: ## Apply k8s manifests without pushing (use local images)
 	@kubectl wait --for=condition=available deployment/team19-web-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/naorobotapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/skeletonfinderapi-deployment --timeout=120s 2>/dev/null || true
-	@kubectl wait --for=condition=available deployment/translatorapi-deployment --timeout=120s 2>/dev/null || true
+	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/voicecommandapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/exercise-config-service-deployment --timeout=120s 2>/dev/null || true
 	@echo "k8s apply done"
@@ -155,7 +155,7 @@ k8s-deploy: push-all ## Push images and deploy all services to Kubernetes
 	@kubectl wait --for=condition=available deployment/team19-web-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/naorobotapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/skeletonfinderapi-deployment --timeout=120s 2>/dev/null || true
-	@kubectl wait --for=condition=available deployment/translatorapi-deployment --timeout=120s 2>/dev/null || true
+	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/voicecommandapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/exercise-config-service-deployment --timeout=120s 2>/dev/null || true
 	@echo "k8s deploy done"
@@ -185,5 +185,6 @@ k8s-restart: ## Restart all Kubernetes deployments
 	@kubectl rollout restart deployment team19-web-deployment || true
 	@kubectl rollout restart deployment naorobotapi-deployment || true
 	@kubectl rollout restart deployment skeletonfinderapi-deployment || true
+	@kubectl rollout restart deployment translator-deployment || true
 	@kubectl rollout restart deployment voicecommandapi-deployment || true
 	@kubectl rollout restart deployment exercise-config-service-deployment || true
