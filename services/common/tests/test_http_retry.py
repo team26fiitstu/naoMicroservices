@@ -7,6 +7,7 @@ and logged after the last retry, and that settings are configurable via
 environment variables.
 """
 
+import http.client
 import logging
 import os
 import sys
@@ -14,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from urllib3 import exceptions as urllib3_exceptions
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -224,3 +226,113 @@ def test_shared_module_source_of_truth():
     for service in ("translator", "voiceCommandAPI", "exerciseConfigService"):
         stale = os.path.join(root, "services", service, "http_retry.py")
         assert not os.path.exists(stale), f"remove duplicated copy: {stale}"
+
+
+# ---------------------------------------------------------------------------
+# Non-idempotent calls: only retried when the request never reached the service
+# ---------------------------------------------------------------------------
+
+def test_non_idempotent_5xx_not_retried():
+    with patch("http_retry.requests.post", return_value=make_response(503)) as mock_post:
+        resp = request_with_retries(
+            "POST", "http://svc/act", idempotent=False, max_attempts=3, sleep=no_sleep,
+        )
+    assert resp.status_code == 503
+    assert mock_post.call_count == 1
+
+
+def test_non_idempotent_read_timeout_not_retried():
+    with patch("http_retry.requests.post",
+               side_effect=requests.ReadTimeout("slow")) as mock_post:
+        with pytest.raises(ServiceCallFailed):
+            request_with_retries(
+                "POST", "http://svc/act", idempotent=False,
+                max_attempts=3, backoff_seconds=0.0, sleep=no_sleep,
+            )
+    assert mock_post.call_count == 1
+
+
+def refused_connection():
+    """ConnectionError exactly as requests raises it when nothing listens."""
+    reason = urllib3_exceptions.NewConnectionError(None, "Connection refused")
+    return requests.ConnectionError(
+        urllib3_exceptions.MaxRetryError(None, "/act", reason))
+
+
+def aborted_connection():
+    """ConnectionError raised after the request was sent (server hung up)."""
+    return requests.ConnectionError(
+        urllib3_exceptions.ProtocolError(
+            "Connection aborted.", http.client.RemoteDisconnected("closed")))
+
+
+def test_non_idempotent_refused_connection_is_retried():
+    with patch("http_retry.requests.post",
+               side_effect=refused_connection()) as mock_post:
+        with pytest.raises(ServiceCallFailed):
+            request_with_retries(
+                "POST", "http://svc/act", idempotent=False,
+                max_attempts=3, backoff_seconds=0.0, sleep=no_sleep,
+            )
+    assert mock_post.call_count == 3
+
+
+def test_non_idempotent_aborted_connection_not_retried():
+    """RemoteDisconnected means the request may have been processed."""
+    with patch("http_retry.requests.post",
+               side_effect=aborted_connection()) as mock_post:
+        with pytest.raises(ServiceCallFailed):
+            request_with_retries(
+                "POST", "http://svc/act", idempotent=False,
+                max_attempts=3, backoff_seconds=0.0, sleep=no_sleep,
+            )
+    assert mock_post.call_count == 1
+
+
+def test_non_idempotent_unrecognised_connection_error_not_retried():
+    with patch("http_retry.requests.post",
+               side_effect=requests.ConnectionError("???")) as mock_post:
+        with pytest.raises(ServiceCallFailed):
+            request_with_retries(
+                "POST", "http://svc/act", idempotent=False,
+                max_attempts=3, backoff_seconds=0.0, sleep=no_sleep,
+            )
+    assert mock_post.call_count == 1
+
+
+def test_idempotent_aborted_connection_still_retried():
+    with patch("http_retry.requests.get",
+               side_effect=[aborted_connection(), make_response(200)]) as mock_get:
+        resp = request_with_retries("GET", "http://svc/x", backoff_seconds=0.0, sleep=no_sleep)
+    assert resp.status_code == 200
+    assert mock_get.call_count == 2
+
+
+def test_max_attempts_one_never_retries_even_on_refused_connection():
+    with patch("http_retry.requests.post",
+               side_effect=refused_connection()) as mock_post:
+        with pytest.raises(ServiceCallFailed):
+            request_with_retries(
+                "POST", "http://svc/act", idempotent=False,
+                max_attempts=1, sleep=no_sleep,
+            )
+    assert mock_post.call_count == 1
+
+
+def test_non_idempotent_connect_timeout_is_retried():
+    responses = [requests.ConnectTimeout("no connect"), make_response(200)]
+    with patch("http_retry.requests.post", side_effect=responses) as mock_post:
+        resp = request_with_retries(
+            "POST", "http://svc/act", idempotent=False,
+            max_attempts=3, backoff_seconds=0.0, sleep=no_sleep,
+        )
+    assert resp.status_code == 200
+    assert mock_post.call_count == 2
+
+
+def test_idempotent_default_still_retries_5xx():
+    with patch("http_retry.requests.get",
+               side_effect=[make_response(503), make_response(200)]) as mock_get:
+        resp = request_with_retries("GET", "http://svc/x", backoff_seconds=0.0, sleep=no_sleep)
+    assert resp.status_code == 200
+    assert mock_get.call_count == 2

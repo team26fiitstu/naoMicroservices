@@ -24,8 +24,17 @@ import os
 import time
 
 import requests
+from urllib3 import exceptions as urllib3_exceptions
 
 logger = logging.getLogger(__name__)
+
+# urllib3 errors raised while establishing the connection, i.e. before any
+# request bytes are sent. NameResolutionError only exists in urllib3 >= 2.
+_NOT_SENT_ERRORS = tuple(
+    getattr(urllib3_exceptions, name)
+    for name in ("NewConnectionError", "NameResolutionError", "ConnectTimeoutError")
+    if hasattr(urllib3_exceptions, name)
+)
 
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_BACKOFF_SECONDS = 1.0
@@ -102,12 +111,38 @@ def retry_settings(max_attempts=None, backoff_seconds=None, backoff_factor=None,
     )
 
 
-def request_with_retries(method, url, *, sleep=time.sleep, **kwargs):
+def _request_not_delivered(exc):
+    """True only when the failure proves the request was never sent.
+
+    `requests.ConnectionError` alone is not enough: "Connection aborted /
+    RemoteDisconnected" is also a ConnectionError but happens after the request
+    went out. We therefore accept only failures that occurred while opening the
+    connection (connect timeout, refused connection, DNS failure). Anything
+    unrecognised counts as "maybe delivered" and is not retried.
+    """
+    if isinstance(exc, requests.ConnectTimeout):
+        return True
+    if isinstance(exc, requests.Timeout) or not isinstance(exc, requests.ConnectionError):
+        return False
+    inner = exc.args[0] if exc.args else None
+    # urllib3 wraps connect failures as MaxRetryError(reason=<connect error>)
+    reason = getattr(inner, "reason", None)
+    return isinstance(reason, _NOT_SENT_ERRORS)
+
+
+def request_with_retries(method, url, *, sleep=time.sleep, idempotent=True, **kwargs):
     """
     Send an HTTP request to another service, retrying limited times with a delay.
 
     Retries on connection errors, timeouts, and the status codes listed in
-    HTTP_RETRY_STATUS_CODES (4xx client errors are never retried). Each failed
+    HTTP_RETRY_STATUS_CODES (4xx client errors are never retried).
+
+    Pass `idempotent=False` for calls with side effects (move the robot, say a
+    voice line, create an exercise, heavy video processing). Such calls are
+    retried only when the request provably never left the client (connection
+    refused, DNS failure, connect timeout); read timeouts, aborted connections
+    and retryable HTTP statuses are NOT retried, because the service may already
+    have processed the request. Each failed
     attempt is logged as a warning; after the final attempt a clear error is
     logged and, if the last attempt raised, `ServiceCallFailed` is raised
     (subclass of `requests.RequestException`). Otherwise the final response is
@@ -127,6 +162,7 @@ def request_with_retries(method, url, *, sleep=time.sleep, **kwargs):
         retry_status_codes=kwargs.pop("retry_status_codes", None),
     )
     sender = getattr(requests, method.lower())
+    retry_statuses = settings.retry_status_codes if idempotent else ()
 
     last_exc = None
     failure_reason = "unknown error"
@@ -135,7 +171,7 @@ def request_with_retries(method, url, *, sleep=time.sleep, **kwargs):
     for attempt in range(1, settings.max_attempts + 1):
         try:
             response = sender(url, **kwargs)
-            if response.status_code not in settings.retry_status_codes:
+            if response.status_code not in retry_statuses:
                 if attempt > 1:
                     logger.info("%s %s succeeded on attempt %d/%d",
                                 method.upper(), url, attempt, settings.max_attempts)
@@ -146,6 +182,14 @@ def request_with_retries(method, url, *, sleep=time.sleep, **kwargs):
             response = None
             failure_reason = "%s: %s" % (type(exc).__name__, exc)
             last_exc = exc
+            if not idempotent and not _request_not_delivered(exc):
+                # The service may already have processed the request.
+                logger.error("%s %s failed (%s); not retrying a non-idempotent call",
+                             method.upper(), url, failure_reason)
+                raise ServiceCallFailed(
+                    "%s %s failed: %s (not retried, request may have been processed)"
+                    % (method.upper(), url, failure_reason)
+                ) from exc
 
         if attempt < settings.max_attempts:
             delay = settings.delay(attempt)

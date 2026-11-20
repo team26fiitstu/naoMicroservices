@@ -8,7 +8,7 @@ import os
 import sys
 
 COMMON_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "common")
+    os.path.join(os.path.dirname(__file__), "..")
 )
 if os.path.isdir(COMMON_DIR) and COMMON_DIR not in sys.path:
     sys.path.insert(0, COMMON_DIR)

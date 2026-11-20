@@ -137,6 +137,7 @@ def execute_command():
             NAO_SET_POSE_URL,
             json={"angles": pose["angles"]},
             timeout=15,
+            idempotent=False,  # a retry could move the robot twice
         )
         resp.raise_for_status()
         nao_response = resp.json()

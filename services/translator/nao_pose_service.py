@@ -96,7 +96,8 @@ def call_exercise_create(name, frames, pose_engine="mediapipe", media_bytes=None
         ext = media_ext if media_ext.startswith(".") else f".{media_ext}"
         data["media"] = (f"original{ext}", media_bytes, "application/octet-stream")
 
-    resp = request_with_retries("POST", f"{EXERCISE_CONFIG_URL}/exercise/create", files=data, timeout=30)
+    resp = request_with_retries("POST", f"{EXERCISE_CONFIG_URL}/exercise/create", files=data, timeout=30,
+                              idempotent=False)
     resp.raise_for_status()
     return resp.json()
 
@@ -106,7 +107,8 @@ def call_nao_set_pose(angles):
     Call NAO pose endpoint with the given angles.
     """
     payload = {"angles": angles}
-    resp = request_with_retries("POST", SET_POSE_URL, json=payload, timeout=15)
+    resp = request_with_retries("POST", SET_POSE_URL, json=payload, timeout=15,
+                              idempotent=False)
     resp.raise_for_status()
     return resp.json()
 
@@ -116,7 +118,9 @@ def call_nao_voice_lines(voice_lines_configs):
     Call NAO to say voice line.
     """
     payload = {"voice_lines": voice_lines_configs}
-    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, timeout=15)
+    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, timeout=15,
+                              idempotent=False,
+                              max_attempts=1)  # a repeated voice line is audible: never retry
     resp.raise_for_status()
     return resp.json()
     
@@ -503,13 +507,16 @@ def exercise_from_video():
     exercise_id = config["id"]
     for frame_index, img_path in enumerate(summary["valid_image_paths"]):
         try:
+            # Read the bytes once: an open file object is consumed by the first
+            # attempt, so a retry would upload an empty image.
             with open(img_path, "rb") as img_file:
-                request_with_retries(
-                    "POST",
-                    f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frame/{frame_index}/image",
-                    files={"image": ("frame.png", img_file, "image/png")},
-                    timeout=10,
-                )
+                image_bytes = img_file.read()
+            request_with_retries(
+                "POST",
+                f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frame/{frame_index}/image",
+                files={"image": ("frame.png", image_bytes, "image/png")},
+                timeout=10,
+            )
         except Exception:
             pass  # images are best-effort, don't fail the whole request
 

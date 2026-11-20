@@ -90,6 +90,7 @@ def process_video_bytes(
         },
         data=encoded_video,
         timeout=60,
+        idempotent=False,  # heavy processing: never re-run after a timeout
     )
     resp.raise_for_status()
     frames = resp.json()
