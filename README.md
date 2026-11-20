@@ -87,12 +87,12 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | `REGISTRY` | Docker image namespace | `ghcr.io/team26fiitstu` |
 | `TAG` | Docker image tag | `latest` |
 | `EXERCISES_HOST_DIR` | Exercise directory on the host | `./exercises` |
+| `TEMPERATURE_LOG_HOST_DIR` | Joint temperature log directory on the host | `./logs/temperature` |
 | `HTTP_RETRY_MAX_ATTEMPTS` | Total attempts for inter-service HTTP calls | `3` |
 | `HTTP_RETRY_BACKOFF_SECONDS` | Initial delay between retries | `1` |
 | `HTTP_RETRY_BACKOFF_FACTOR` | Backoff multiplier after each attempt | `2` |
 | `HTTP_RETRY_MAX_BACKOFF_SECONDS` | Upper bound for a single retry delay | `10` |
 | `HTTP_RETRY_STATUS_CODES` | HTTP statuses that trigger a retry (comma-separated) | `429,500,502,503,504` |
-| `TEMPERATURE_LOG_HOST_DIR` | Joint temperature log directory on the host | `./logs/temperature` |
 
 Compose and Python service entry points read the root `.env` automatically; existing process variables take precedence. Without Docker, NAO API maps `host.docker.internal` to `127.0.0.1` for Choregraphe.
 
