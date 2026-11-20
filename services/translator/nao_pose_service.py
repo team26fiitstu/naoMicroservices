@@ -665,7 +665,10 @@ def exercise_get(exercise_id):
 
 @app.route("/exercise/<exercise_id>", methods=["DELETE"])
 def exercise_delete(exercise_id):
-    resp = request_with_retries("DELETE", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+    # A repeated DELETE after a lost response would return 404 for an exercise that
+    # was in fact deleted, so only retry when the request was never sent.
+    resp = request_with_retries("DELETE", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}",
+                                timeout=10, idempotent=False)
     return jsonify(resp.json()), resp.status_code
 
 

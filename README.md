@@ -106,7 +106,7 @@ The shared module is injected with Compose `additional_contexts` (`common=./serv
 
 All HTTP calls between services go through a shared retry helper: a temporarily unavailable peer is retried `HTTP_RETRY_MAX_ATTEMPTS` times with an exponentially growing delay. When every attempt fails, a clear error is logged and returned to the caller (typically as `502` with the failure detail).
 
-Calls with side effects (`setPose`, `applyVoiceLine`, `POST /exercise/create`, `pose_from_video`) are not idempotent, so they pass `idempotent=False`: they are retried only when the request provably never left the client (connection refused, DNS failure, connect timeout) and never on read timeouts, aborted connections or `5xx`/`429` responses. `applyVoiceLine` is never retried (`max_attempts=1`). `GET`/`PUT`/`DELETE` and other safe calls keep the full retry behaviour.
+Calls with side effects or non-repeatable outcomes (`setPose`, `applyVoiceLine`, `POST /exercise/create`, `pose_from_video`, `DELETE /exercise/<id>`) are not idempotent, so they pass `idempotent=False`: they are retried only when the request provably never left the client (connection refused, DNS failure, connect timeout) and never on read timeouts, aborted connections or `5xx`/`429` responses. A repeated `DELETE` would return `404` for an exercise that was already deleted. `applyVoiceLine` is never retried (`max_attempts=1`). `GET`, `PUT` (config/sequence set values) and the frame-image upload (overwrites the file) keep the full retry behaviour.
 
 ## Robot configuration
 

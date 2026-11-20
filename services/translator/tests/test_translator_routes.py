@@ -139,6 +139,19 @@ class TranslatorRoutes(OfflineCase):
                     function(*args)
                 self.assertIs(send.call_args.kwargs["idempotent"], False)
 
+    def test_delete_with_lost_response_is_not_repeated(self):
+        # The first DELETE is processed but its response is lost. A retry would hit
+        # a 404 and make the UI report a failure for an exercise that is gone.
+        for failure in (requests.ReadTimeout("response lost"), response({"error": "bad gateway"}, 502)):
+            with self.subTest(failure=failure):
+                lost = failure if isinstance(failure, Exception) else None
+                with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                        patch.object(translator.requests, "delete", side_effect=lost,
+                                     return_value=None if lost else failure) as upstream:
+                    result = self.client.delete("/exercise/ex1")
+                self.assertEqual(upstream.call_count, 1)
+                self.assertEqual(result.status_code, 502)
+
     def test_voice_line_is_never_retried(self):
         with patch.object(translator, "request_with_retries", return_value=response({})) as send:
             translator.call_nao_voice_lines({"lang": "English"})
@@ -199,4 +212,4 @@ class TranslatorRoutes(OfflineCase):
                     unavailable = getattr(self.client, method)(path, json=body)
                 self.assertEqual(unavailable.status_code, 502)
                 self.assertEqual(unavailable.json["error"], "upstream service unavailable")
-                self.assertIn("failed after", unavailable.json["detail"])
+                self.assertIn("ConnectionError: down", unavailable.json["detail"])
