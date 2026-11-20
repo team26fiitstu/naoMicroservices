@@ -62,6 +62,51 @@ data:
             client_max_body_size 50m;
             proxy_read_timeout 60s;
         }
+        
+        location = /exercise/from_image {
+            proxy_pass http://translator:7000/exercise/from_image;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            client_max_body_size 500m;
+            proxy_read_timeout 300s;
+        }
+
+        # Robot: apply a voice line (exact match wins over /voiceLines/)
+        location = /voiceLines/applyVoiceLine {
+            proxy_pass http://naorobotapi:5000/voiceLines/applyVoiceLine;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+        }
+
+        # Voice line config and sounds → exercise config service
+        location /voiceLines/ {
+            proxy_pass http://exercise-config-service:7001/voiceLines/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            client_max_body_size 50m;
+            proxy_read_timeout 60s;
+        }
+
+        location /translate/ {
+            proxy_pass http://audio-to-text-converter:9901/translate/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            client_max_body_size 500m;
+            proxy_read_timeout 300s;
+        }
 
         # Pose images
         location ~ ^/pose/[^/]+/image$ {
