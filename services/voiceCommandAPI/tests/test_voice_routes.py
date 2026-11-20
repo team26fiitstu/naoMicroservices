@@ -1,8 +1,11 @@
 """Offline HTTP contract tests for voice commands."""
+import os
 import sys
+from http.client import RemoteDisconnected
 from unittest.mock import patch
 
 import requests
+from urllib3 import exceptions as urllib3_exceptions
 
 from tests._support import OfflineCase, ROOT, load_module, response
 
@@ -58,12 +61,26 @@ class VoiceRoutes(OfflineCase):
         upstream.assert_not_called()
 
     def test_nao_api_failure_returns_502(self):
-        for failure in (requests.ConnectionError("NAO unavailable"), response({"error": "down"}, 503)):
+        # setPose is not idempotent: a refused connection (request never sent)
+        # is retried, but an HTTP 5xx / timeout / aborted connection must not
+        # repeat the robot move.
+        refused = requests.ConnectionError(urllib3_exceptions.MaxRetryError(
+            None, "/setPose", urllib3_exceptions.NewConnectionError(None, "refused")))
+        aborted = requests.ConnectionError(urllib3_exceptions.ProtocolError(
+            "Connection aborted.", RemoteDisconnected("closed")))
+        failures = (
+            (refused, 3),
+            (aborted, 1),
+            (requests.ReadTimeout("NAO too slow"), 1),
+            (response({"error": "down"}, 503), 1),
+        )
+        for failure, expected_calls in failures:
             with self.subTest(failure=failure):
-                with patch.object(voice.requests, "post", side_effect=failure if isinstance(failure, Exception) else None,
-                                  return_value=None if isinstance(failure, Exception) else failure) as upstream:
+                with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                        patch.object(voice.requests, "post", side_effect=failure if isinstance(failure, Exception) else None,
+                                     return_value=None if isinstance(failure, Exception) else failure) as upstream:
                     result = self.client.post("/command", json={"command": "wave"})
                 self.assertEqual(result.status_code, 502)
                 self.assertEqual(result.json["command"], "wave")
                 self.assertIn("failed to reach NAO robot API", result.json["error"])
-                upstream.assert_called_once()
+                self.assertEqual(upstream.call_count, expected_calls)

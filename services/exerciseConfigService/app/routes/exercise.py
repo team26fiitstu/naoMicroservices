@@ -22,6 +22,7 @@ from app.storage import (
     get_frame_image,
 )
 from runtime_config import service_host
+from http_retry import request_with_retries
 
 VOICE_COMMAND_API_URL = "http://%s:8000" % service_host("voicecommandapi")
 exercise_bp = Blueprint("exercise", __name__, url_prefix="/exercise")
@@ -271,7 +272,7 @@ def insert_frame_from_pose(exercise_id):
         return jsonify({"error": "'position' must be an integer"}), 400
 
     try:
-        resp = requests.get(f"{VOICE_COMMAND_API_URL}/pose/{pose_name}", timeout=10)
+        resp = request_with_retries("GET", f"{VOICE_COMMAND_API_URL}/pose/{pose_name}", timeout=10)
         if resp.status_code == 404:
             return jsonify(resp.json()), 400
         resp.raise_for_status()

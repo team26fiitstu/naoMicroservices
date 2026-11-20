@@ -23,6 +23,7 @@ import flask_cors
 
 from pose_registry import resolve, list_commands
 from runtime_config import service_host
+from http_retry import request_with_retries
 
 NAO_SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
 
@@ -131,10 +132,12 @@ def execute_command():
         }), 400
 
     try:
-        resp = requests.post(
+        resp = request_with_retries(
+            "POST",
             NAO_SET_POSE_URL,
             json={"angles": pose["angles"]},
             timeout=15,
+            idempotent=False,  # a retry could move the robot twice
         )
         resp.raise_for_status()
         nao_response = resp.json()

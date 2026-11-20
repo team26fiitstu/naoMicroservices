@@ -13,6 +13,7 @@ naoMicroservices/
 ├── scripts/                        # Utility and helper scripts
 ├── services/                       # Backend microservices
 │   ├── audioToTextConverter/
+│   ├── common/                     # Shared modules copied into service images
 │   ├── exerciseConfigService/
 │   ├── naoRobotAPI/
 │   ├── skeletonFinderAPI/
@@ -87,8 +88,25 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | `TAG` | Docker image tag | `latest` |
 | `EXERCISES_HOST_DIR` | Exercise directory on the host | `./exercises` |
 | `TEMPERATURE_LOG_HOST_DIR` | Joint temperature log directory on the host | `./logs/temperature` |
+| `HTTP_RETRY_MAX_ATTEMPTS` | Total attempts for inter-service HTTP calls | `3` |
+| `HTTP_RETRY_BACKOFF_SECONDS` | Initial delay between retries | `1` |
+| `HTTP_RETRY_BACKOFF_FACTOR` | Backoff multiplier after each attempt | `2` |
+| `HTTP_RETRY_MAX_BACKOFF_SECONDS` | Upper bound for a single retry delay | `10` |
+| `HTTP_RETRY_STATUS_CODES` | HTTP statuses that trigger a retry (comma-separated) | `429,500,502,503,504` |
 
 Compose and Python service entry points read the root `.env` automatically; existing process variables take precedence. Without Docker, NAO API maps `host.docker.internal` to `127.0.0.1` for Choregraphe.
+
+Shared Python modules live in `services/common/` (currently `http_retry.py`). The Docker builds of `translatorapi`, `voicecommandapi`, and `exercise-config-service` copy them from the named build context `common` into each image. When running a service directly without Docker, add `services/common` to `PYTHONPATH`:
+
+```sh
+PYTHONPATH=services/common python services/translator/nao_pose_service.py
+```
+
+The shared module is injected with Compose `additional_contexts` (`common=./services/common`), which requires Docker Compose v2.17 or newer (the v2.24+ requirement above already covers it). Tests for the shared module live in `services/common/tests/`.
+
+All HTTP calls between services go through a shared retry helper: a temporarily unavailable peer is retried `HTTP_RETRY_MAX_ATTEMPTS` times with an exponentially growing delay. When every attempt fails, a clear error is logged and returned to the caller (typically as `502` with the failure detail).
+
+Calls with side effects or non-repeatable outcomes (`setPose`, `applyVoiceLine`, `POST /exercise/create`, `pose_from_video`, `DELETE /exercise/<id>`) are not idempotent, so they pass `idempotent=False`: they are retried only when the request provably never left the client (connection refused, DNS failure, connect timeout) and never on read timeouts, aborted connections or `5xx`/`429` responses. A repeated `DELETE` would return `404` for an exercise that was already deleted. `applyVoiceLine` is never retried (`max_attempts=1`). `GET`, `PUT` (config/sequence set values) and the frame-image upload (overwrites the file) keep the full retry behaviour.
 
 ## Robot configuration
 
