@@ -1,7 +1,0 @@
-<worktree>
-  <project src="." />
-  <project src="myapp.pml" />
-  <project src="manifest.xml" />
-  <project src="myservice.py" />
-  <project src="qiproject.xml" />
-  </worktree>
