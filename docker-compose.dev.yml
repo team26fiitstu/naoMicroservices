@@ -24,8 +24,11 @@ services:
       COMPOSE_NETWORK: "true"
       NAO_IP: ${NAO_IP:-host.docker.internal}
       NAO_PORT: ${NAO_PORT:-9559}
+      TEMPERATURE_LOG_DIR: /logs/temperature
     ports:
       - "5000:5000"
+    volumes:
+      - ${TEMPERATURE_LOG_HOST_DIR:-./logs/temperature}:/logs/temperature
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

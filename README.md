@@ -86,6 +86,7 @@ Copy the root `.env.example` to `.env` and edit only that file. Nested `.env` fi
 | `REGISTRY` | Docker image namespace | `ghcr.io/team26fiitstu` |
 | `TAG` | Docker image tag | `latest` |
 | `EXERCISES_HOST_DIR` | Exercise directory on the host | `./exercises` |
+| `TEMPERATURE_LOG_HOST_DIR` | Joint temperature log directory on the host | `./logs/temperature` |
 
 Compose and Python service entry points read the root `.env` automatically; existing process variables take precedence. Without Docker, NAO API maps `host.docker.internal` to `127.0.0.1` for Choregraphe.
 
@@ -112,3 +113,9 @@ Apply changes:
 ## Dedicated disk location
 
 Set `EXERCISES_HOST_DIR` in the root `.env` to the existing exercise directory. The default `./exercises` creates a new empty store.
+
+Set `TEMPERATURE_LOG_HOST_DIR` to store joint temperature logs outside the repository. The default is `./logs/temperature`.
+
+# Joint temperature logging
+
+`naoRobotAPI` can read and log NAO joint temperatures during exercises. Logs are written to `TEMPERATURE_LOG_HOST_DIR` (default `logs/temperature/`). See [docs/joint-temperature-logging.md](docs/joint-temperature-logging.md).
