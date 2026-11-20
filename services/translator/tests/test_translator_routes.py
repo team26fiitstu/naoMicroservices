@@ -194,3 +194,9 @@ class TranslatorRoutes(OfflineCase):
                 with patch.object(translator.requests, upstream_method, return_value=response({"error": "missing"}, 404)):
                     missing = getattr(self.client, method)(path, json=body)
                 self.assertEqual(missing.status_code, 404)
+                with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                        patch.object(translator.requests, upstream_method, side_effect=requests.ConnectionError("down")):
+                    unavailable = getattr(self.client, method)(path, json=body)
+                self.assertEqual(unavailable.status_code, 502)
+                self.assertEqual(unavailable.json["error"], "upstream service unavailable")
+                self.assertIn("failed after", unavailable.json["detail"])

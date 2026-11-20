@@ -645,6 +645,12 @@ def arms_from_video():
 # EXERCISE CRUD PROXIES
 # =========================
 
+@app.errorhandler(requests.RequestException)
+def handle_upstream_failure(e):
+    """Uncaught upstream failure (e.g. exerciseconfigservice down) -> JSON 502, not an HTML 500."""
+    return jsonify({"error": "upstream service unavailable", "detail": str(e)}), 502
+
+
 @app.route("/exercise/list", methods=["GET"])
 def exercise_list():
     resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/list", timeout=10)
