@@ -14,6 +14,7 @@ import flask_cors
 from robot_module_testing.test_api import test_api
 from robot.setting_pose.setting_pose_api import setting_pose_api
 from robot.voice_lines.voice_lines_api import voice_lines_api
+from robot.temperature.temperature_api import temperature_api
 
 app = Flask(
     __name__,
@@ -26,6 +27,7 @@ flask_cors.CORS(app)
 app.register_blueprint(test_api, url_prefix="/tests")
 app.register_blueprint(setting_pose_api, url_prefix="/setting_pose")
 app.register_blueprint(voice_lines_api, url_prefix="/voiceLines")
+app.register_blueprint(temperature_api, url_prefix="/temperature")
 
 
 @app.route("/", methods=["GET"])
