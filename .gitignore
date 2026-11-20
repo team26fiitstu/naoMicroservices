@@ -31,6 +31,7 @@
 .env
 /images/
 /exercises/
+/logs/
 /services/skeletonFinderAPI/server/*.pt
 
 .idea/
