@@ -221,6 +221,7 @@ class _Recording(object):
                 "stopped_at": iso_timestamp(self.stopped) if self.stopped is not None else None,
                 "stop_reason": self.stop_reason,
                 "interval_s": self.interval_s,
+                "max_duration_s": self.max_duration_s,
                 "duration_s": round(end - self.started, 3),
                 "samples": self.samples,
                 "read_errors": self.read_errors,

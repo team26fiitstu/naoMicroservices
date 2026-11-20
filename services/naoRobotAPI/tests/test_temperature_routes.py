@@ -207,6 +207,7 @@ class TemperatureRoutes(OfflineCase):
         summary = stopped.json
         self.assertFalse(summary["active"])
         self.assertEqual(summary["stop_reason"], "requested")
+        self.assertEqual((summary["interval_s"], summary["max_duration_s"]), (0.2, 1800.0))
         self.assertGreaterEqual(summary["samples"], 3)
         self.assertEqual([joint["joint"] for joint in summary["joints"]], list(JOINTS))
         hottest = summary["joints"][0]
