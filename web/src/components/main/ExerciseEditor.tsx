@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "radix-ui";
 import { AudioRecorderComponent } from "@/components/ui/audioRecorder";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 import {
   Loader2,
   Upload,
@@ -104,6 +106,10 @@ export default function ExerciseEditor() {
   const [uploading, setUploading]     = useState(false);
   const [fps, setFps]                 = useState(1);
   const [maxFrames, setMaxFrames]     = useState(8);
+  // video waiting for range choice before upload
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingUrl, setPendingUrl]   = useState<string | null>(null);
+  const [videoRange, setVideoRange]   = useState<VideoRange | null>(null);
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [running, setRunning]         = useState(false);
   const [insertingAt, setInsertingAt] = useState<number | null>(null);
@@ -151,14 +157,32 @@ export default function ExerciseEditor() {
     if (type !== "error") setTimeout(() => setStatus(null), 4000);
   };
 
-  // ── upload video ──────────────────────────────────────────────
-  // POST /exercise/from_video  (multipart, field "video")
-  // Returns the saved exercise config — extract id from it.
-  const handleUpload = useCallback(async (file: File) => {
+  // ── select video ──────────────────────────────────────────────
+  const selectVideo = (file: File) => {
     if (!file.type.startsWith("video/")) {
       showStatus("error", "Prosím vyberte video súbor.");
       return;
     }
+    setStatus(null);
+    setVideoRange(null);
+    setPendingFile(file);
+    setPendingUrl(URL.createObjectURL(file));
+  };
+
+  const clearPendingVideo = () => {
+    setPendingFile(null);
+    setPendingUrl(null);
+    setVideoRange(null);
+  };
+
+  useEffect(() => {
+    return () => { if (pendingUrl) URL.revokeObjectURL(pendingUrl); };
+  }, [pendingUrl]);
+
+  // ── upload video ──────────────────────────────────────────────
+  // POST /exercise/from_video  (multipart, field "video", optional "start"/"end" in seconds)
+  // Returns the saved exercise config — extract id from it.
+  const handleUpload = useCallback(async (file: File, range: VideoRange | null) => {
     setUploading(true);
     setStatus(null);
     setFrames([]);
@@ -169,6 +193,7 @@ export default function ExerciseEditor() {
       fd.append("video", file);
       fd.append("fps", String(fps));
       fd.append("max_frames", String(maxFrames));
+      appendVideoRange(fd, range);
 
       const res = await fetch(`${UPLOAD_API}/exercise/from_video`, {
         method: "POST",
@@ -475,7 +500,7 @@ export default function ExerciseEditor() {
   const onDropZone = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
+    if (file) selectVideo(file);
   };
 
   // ── render ────────────────────────────────────────────────────
@@ -574,8 +599,36 @@ export default function ExerciseEditor() {
         </div>
       )}
 
+      {/* ── range selection ── */}
+      {!exerciseId && pendingFile && pendingUrl && (
+        <Card className="gap-4 px-6">
+          <div className="flex items-start gap-3">
+            <Film className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{pendingFile.name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Vyberte časť videa, z ktorej sa vytvorí cvičenie.</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto -mt-1 -mr-2 shrink-0"
+              onClick={clearPendingVideo}
+              disabled={uploading}
+              aria-label="Zrušiť"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <VideoTrimmer key={pendingUrl} src={pendingUrl} onChange={setVideoRange} />
+          <Button onClick={() => handleUpload(pendingFile, videoRange)} disabled={uploading || !videoRange} className="w-full">
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? "Spracovanie videa…" : "Spracovať vybranú časť"}
+          </Button>
+        </Card>
+      )}
+
       {/* ── upload zone (shown when no exercise loaded) ── */}
-      {!exerciseId && (
+      {!exerciseId && !pendingFile && (
         <Card
           className={[
             "border-2 border-dashed transition-colors duration-200 cursor-pointer",
@@ -610,7 +663,7 @@ export default function ExerciseEditor() {
             type="file"
             accept="video/*"
             className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) selectVideo(f); }}
           />
         </Card>
       )}
@@ -667,7 +720,7 @@ export default function ExerciseEditor() {
 
           <button
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
-            onClick={() => { setExerciseId(null); setFrames([]); setStatus(null); setExerciseName(""); setCalories(null); setDescription(null); }}
+            onClick={() => { clearPendingVideo(); setExerciseId(null); setFrames([]); setStatus(null); setExerciseName(""); setCalories(null); setDescription(null); }}
           >
             <Upload className="h-3.5 w-3.5" />
             Nahrať iné video

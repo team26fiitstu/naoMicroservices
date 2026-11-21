@@ -64,6 +64,17 @@ class SkeletonRoutes(OfflineCase):
         self.assertEqual(model.call_args.kwargs["number_frames_per_sec"], 2)
         self.assertEqual(model.call_args.kwargs["number_seconds_to_process"], 5)
 
+    def test_video_range_reaches_mediapipe(self):
+        with patch.object(mediapipe, "evaluate_pose_from_video_mediapipe", return_value=[]) as model:
+            result = self.client.post("/media_pipe_pose/pose_from_video?start_seconds=1.5&end_seconds=4", data="encoded")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(model.call_args.kwargs["start_seconds"], 1.5)
+        self.assertEqual(model.call_args.kwargs["end_seconds"], 4)
+        with patch.object(mediapipe, "evaluate_pose_from_video_mediapipe", return_value=[]) as model:
+            self.client.post("/media_pipe_pose/pose_from_video", data="encoded")
+        self.assertEqual(model.call_args.kwargs["start_seconds"], 0)
+        self.assertEqual(model.call_args.kwargs["end_seconds"], -1)
+
     def test_get_pose_routes_and_missing_path(self):
         cases = (
             ("/media_pipe_pose/pose_from_image", mediapipe, "evaluate_pose_mediapipe", {"joint": 1}),

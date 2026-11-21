@@ -58,7 +58,9 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
                                        min_tracking_confidence: float = 0.5, number_frames_per_sec: int = 1,
                                        number_seconds_to_process: int = -1, video_frame_per_second: int = 30,
                                        is_base64encoded: bool = True,
-                                       attach_visualization: bool = False) -> Iterator[Dict]:
+                                       attach_visualization: bool = False,
+                                       start_seconds: float = 0, end_seconds: float = -1) -> Iterator[Dict]:
+    """Pose per sampled frame; start_seconds/end_seconds limit range, negative end means until end."""
     source = base64.b64decode(source) if is_base64encoded else source
     if number_frames_per_sec > video_frame_per_second:
         raise Exception("Number of frames per sec to extract cannot be higher as fps!")
@@ -83,6 +85,11 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
         print('Error while trying to read video. Please check path again')
         raise SystemExit()
     else:
+        # range in real seconds, so frame time uses video's own fps; sampling keeps video_frame_per_second
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not video_fps or video_fps <= 0:
+            video_fps = video_frame_per_second
+        range_start_frame = None
         frame_width = int(cap.get(3))  # get video frame width
         frame_height = int(cap.get(4))  # get video frame height
 
@@ -107,7 +114,16 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
                 break
             if ret:  # if success is true, means frame exist
                 frame_number = frame_number + 1
-                if __should_extract_frame(frame_number - 1, video_frame_per_second, number_frames_per_sec):
+                frame_time = (frame_number - 1) / video_fps
+                if frame_time < start_seconds:
+                    continue
+                if 0 <= end_seconds < frame_time:
+                    break
+                if range_start_frame is None:
+                    range_start_frame = frame_number - 1
+                # sampling starts at range start
+                if __should_extract_frame(frame_number - 1 - range_start_frame,
+                                          video_frame_per_second, number_frames_per_sec):
                     for image_config in __process_video_image(frame, out,
                                                               total_fps, fps_list, time_list,
                                                               min_detection_confidence,
@@ -122,8 +138,9 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
 
         cap.release()
         # cv2.destroyAllWindows()
-        avg_fps = total_fps / frame_count
-        print(f"Average FPS: {avg_fps:.3f}")
+        if frame_count:
+            avg_fps = total_fps / frame_count
+            print(f"Average FPS: {avg_fps:.3f}")
 
 
 def __evaluate_pose_mediapipe_pil_image(orig_image: Image, min_detection_confidence: float = 0.5,

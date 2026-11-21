@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle, X } from "lucide-react";
+import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 
 const API_BASE_URL = "http://127.0.0.1:7000"; //(process.env.HOST_DOCKER_INTERNAL as string) + ":7000";
 
@@ -11,6 +13,7 @@ export default function SimpleUploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [videoRange, setVideoRange] = useState<VideoRange | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{ type: "success" | "error" | null; message: string }>({ type: null, message: "" });
 
   useEffect(() => {
@@ -21,6 +24,7 @@ export default function SimpleUploadPage() {
     if (!files.length) return;
     const selected = files[0];
     setFile(selected);
+    setVideoRange(null);
     setUploadStatus({ type: null, message: "" });
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(URL.createObjectURL(selected));
@@ -30,6 +34,7 @@ export default function SimpleUploadPage() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(null);
     setPreviewUrl(null);
+    setVideoRange(null);
     setUploadStatus({ type: null, message: "" });
   };
 
@@ -49,6 +54,7 @@ export default function SimpleUploadPage() {
         formData.append("name", exerciseName);
         formData.append("fps", "1");
         formData.append("seconds", "-1");
+        appendVideoRange(formData, videoRange);
       } else {
         formData.append("image", file);
         formData.append("name", exerciseName);
@@ -91,12 +97,12 @@ export default function SimpleUploadPage() {
 
         {file && previewUrl && (
           <div className="px-4 pb-4 space-y-3">
-            <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+            <div className={isVideo ? "relative" : "relative bg-gray-100 rounded-lg overflow-hidden"}>
               <button onClick={clearFile} className="absolute top-2 right-2 z-10 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors">
                 <X className="h-4 w-4" />
               </button>
               {isVideo
-                ? <video src={previewUrl} controls className="w-full max-h-80 object-contain" />
+                ? <VideoTrimmer key={previewUrl} src={previewUrl} onChange={setVideoRange} />
                 : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain" />
               }
             </div>

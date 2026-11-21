@@ -45,11 +45,15 @@ def pose_from_video_local():
         attach_visualization = bool(request.args.get("attach_visualization", ""))
         number_frames_per_sec = int(request.args.get("number_frames_per_sec", 1))
         number_seconds_to_process = int(request.args.get("number_seconds_to_process", -1))
+        start_seconds = float(request.args.get("start_seconds", 0))
+        end_seconds = float(request.args.get("end_seconds", -1))
         evaluation_response = list(evaluate_pose_from_video_mediapipe(file_location, is_base64encoded=False,
                                                                       number_frames_per_sec=number_frames_per_sec,
                                                                       number_seconds_to_process=
                                                                       number_seconds_to_process,
-                                                                      attach_visualization=attach_visualization))
+                                                                      attach_visualization=attach_visualization,
+                                                                      start_seconds=start_seconds,
+                                                                      end_seconds=end_seconds))
         return application_json_response(evaluation_response, 200)
     return application_json_response({
         "Error": "File path does not specified. "
@@ -77,8 +81,12 @@ def pose_from_video():
     attach_visualization = bool(request.args.get("attach_visualization", ""))
     number_frames_per_sec = int(request.args.get("number_frames_per_sec", 1))
     number_seconds_to_process = int(request.args.get("number_seconds_to_process", -1))
+    start_seconds = float(request.args.get("start_seconds", 0))
+    end_seconds = float(request.args.get("end_seconds", -1))
     evaluation_response = list(evaluate_pose_from_video_mediapipe(encoded_video, is_base64encoded=True,
                                                                   number_frames_per_sec=number_frames_per_sec,
                                                                   number_seconds_to_process=number_seconds_to_process,
-                                                                  attach_visualization=attach_visualization))
+                                                                  attach_visualization=attach_visualization,
+                                                                  start_seconds=start_seconds,
+                                                                  end_seconds=end_seconds))
     return application_json_response(evaluation_response, 200)
