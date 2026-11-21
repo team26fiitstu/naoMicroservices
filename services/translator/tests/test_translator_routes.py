@@ -1,6 +1,8 @@
 """Offline HTTP tests for translator routes."""
 import io
+import os
 import sys
+import tempfile
 from unittest.mock import patch
 
 import requests
@@ -100,6 +102,62 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(create.call_args.kwargs["name"], "demo")
         self.assertEqual(process.call_args.kwargs["number_frames_per_sec"], 2)
         self.assertEqual(process.call_args.kwargs["number_seconds_to_process"], 5)
+    def test_frame_image_retry_resends_full_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = os.path.join(tmp, "frame.png")
+            with open(image_path, "wb") as handle:
+                handle.write(b"png-bytes")
+            summary = dict(SUMMARY, valid_image_paths=[image_path])
+            uploads = []
+
+            def upload_image(url, **kwargs):
+                if "/image" not in url:
+                    return response({"id": "ex1"}, 201)
+                content = kwargs["files"]["image"][1]
+                # requests reads file objects to EOF while preparing a request
+                uploads.append(content.read() if hasattr(content, "read") else content)
+                return response({}, 503 if len(uploads) == 1 else 200)
+
+            with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                    patch.object(translator, "process_video_bytes", return_value=summary), \
+                    patch.object(translator, "translate_arms", return_value=ANGLES), \
+                    patch.object(translator.requests, "post", side_effect=upload_image), \
+                    patch.object(translator.os, "makedirs"):
+                result = self.upload("/exercise/from_video", "video", name="demo")
+        self.assertEqual(result.status_code, 201)
+        self.assertEqual(uploads, [b"png-bytes", b"png-bytes"])
+
+    def test_side_effect_calls_are_not_retried_on_timeouts_or_5xx(self):
+        calls = (
+            (translator.call_nao_set_pose, ([0.1] * 22,)),
+            (translator.call_nao_voice_lines, ({"lang": "English"},)),
+            (translator.call_exercise_create, ("demo", [])),
+        )
+        for function, args in calls:
+            with self.subTest(function=function.__name__):
+                with patch.object(translator, "request_with_retries", return_value=response({})) as send:
+                    function(*args)
+                self.assertIs(send.call_args.kwargs["idempotent"], False)
+
+    def test_delete_with_lost_response_is_not_repeated(self):
+        # The first DELETE is processed but its response is lost. A retry would hit
+        # a 404 and make the UI report a failure for an exercise that is gone.
+        for failure in (requests.ReadTimeout("response lost"), response({"error": "bad gateway"}, 502)):
+            with self.subTest(failure=failure):
+                lost = failure if isinstance(failure, Exception) else None
+                with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                        patch.object(translator.requests, "delete", side_effect=lost,
+                                     return_value=None if lost else failure) as upstream:
+                    result = self.client.delete("/exercise/ex1")
+                self.assertEqual(upstream.call_count, 1)
+                self.assertEqual(result.status_code, 502)
+
+    def test_voice_line_is_never_retried(self):
+        with patch.object(translator, "request_with_retries", return_value=response({})) as send:
+            translator.call_nao_voice_lines({"lang": "English"})
+        self.assertEqual(send.call_args.kwargs["max_attempts"], 1)
+
+
 
     def test_run_exercise(self):
         frames = [{"frame_index": 0, "nao_angles": [0.1] * 22}]
@@ -149,3 +207,9 @@ class TranslatorRoutes(OfflineCase):
                 with patch.object(translator.requests, upstream_method, return_value=response({"error": "missing"}, 404)):
                     missing = getattr(self.client, method)(path, json=body)
                 self.assertEqual(missing.status_code, 404)
+                with patch.dict(os.environ, {"HTTP_RETRY_BACKOFF_SECONDS": "0"}), \
+                        patch.object(translator.requests, upstream_method, side_effect=requests.ConnectionError("down")):
+                    unavailable = getattr(self.client, method)(path, json=body)
+                self.assertEqual(unavailable.status_code, 502)
+                self.assertEqual(unavailable.json["error"], "upstream service unavailable")
+                self.assertIn("ConnectionError: down", unavailable.json["detail"])

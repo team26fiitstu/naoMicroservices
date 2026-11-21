@@ -24,8 +24,11 @@ services:
       COMPOSE_NETWORK: "true"
       NAO_IP: ${NAO_IP:-host.docker.internal}
       NAO_PORT: ${NAO_PORT:-9559}
+      TEMPERATURE_LOG_DIR: /logs/temperature
     ports:
       - "5000:5000"
+    volumes:
+      - ${TEMPERATURE_LOG_HOST_DIR:-./logs/temperature}:/logs/temperature
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -46,7 +49,10 @@ services:
       - ./images:/images:ro
 
   translatorapi:
-    build: ./services/translator
+    build:
+      context: ./services/translator
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/translator:${TAG:-latest}
     command: python nao_pose_service.py
     env_file:
@@ -65,7 +71,10 @@ services:
       - exercise-config-service
 
   voicecommandapi:
-    build: ./services/voiceCommandAPI
+    build:
+      context: ./services/voiceCommandAPI
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/voice-command-api:${TAG:-latest}
     env_file:
       - path: ./.env
@@ -78,7 +87,10 @@ services:
       - naorobotapi
 
   exercise-config-service:
-    build: ./services/exerciseConfigService
+    build:
+      context: ./services/exerciseConfigService
+      additional_contexts:
+        - common=./services/common
     image: ${REGISTRY:-ghcr.io/team26fiitstu}/exercise-config-service:${TAG:-latest}
     command: python run.py
     env_file:
