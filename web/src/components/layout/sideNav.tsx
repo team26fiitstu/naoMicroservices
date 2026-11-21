@@ -1,13 +1,5 @@
-import { Home, Upload, Mic, Library, FilmIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-
-const items = [
-  { path: "/", icon: Home, label: "Domov" },
-  { path: "/upload", icon: Upload, label: "Nahranie" },
-  { path: "/voice", icon: Mic, label: "Hlasové príkazy" },
-  { path: "/exercises", icon: Library, label: "Cvičenia" },
-  { path: "/edit", icon: FilmIcon, label: "Editor" },
-];
+import { NAV_ITEMS } from "@/lib/navigation";
 
 export function SideNav() {
   const location = useLocation();
@@ -17,7 +9,7 @@ export function SideNav() {
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-4">
         NAO Cvičenia
       </p>
-      {items.map(({ path, icon: Icon, label }) => {
+      {NAV_ITEMS.map(({ path, icon: Icon, label }) => {
         const active = location.pathname === path;
         return (
           <Link

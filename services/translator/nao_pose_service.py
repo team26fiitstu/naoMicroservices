@@ -33,6 +33,9 @@ SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi
 VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("naorobotapi")
 EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
 
+# name of unnamed exercise, Slovak UI
+DEFAULT_EXERCISE_NAME = "Nepomenované cvičenie"
+
 # Host directory mounted into pose container as /images
 POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "images")))
 POSE_CONT_ROOT = os.environ.get("POSE_SERVICE_IMAGE_DIR", POSE_HOST_ROOT)
@@ -191,7 +194,7 @@ def exercise_from_image():
 
     Request (multipart/form-data):
         image: file
-        name:  string (default "Unnamed Exercise")
+        name:  string (default DEFAULT_EXERCISE_NAME)
 
     Response:
         201 JSON: exercise config
@@ -203,7 +206,7 @@ def exercise_from_image():
     if file.filename == "":
         return jsonify({"error": "empty filename"}), 400
 
-    name = request.form.get("name", "Unnamed Exercise")
+    name = request.form.get("name", DEFAULT_EXERCISE_NAME)
     ext = os.path.splitext(file.filename)[1] or ".jpg"
 
     try:
@@ -441,7 +444,7 @@ def exercise_from_video():
 
     Request (multipart/form-data):
         video:   file
-        name:    string (default "Unnamed Exercise")
+        name:    string (default DEFAULT_EXERCISE_NAME)
         fps:     int    (default 1)
         seconds: int    (default -1, full video)
         start:   float  (default 0, range start in seconds)
@@ -457,7 +460,7 @@ def exercise_from_video():
     if file.filename == "":
         return jsonify({"error": "empty filename"}), 400
 
-    name = request.form.get("name", "Unnamed Exercise")
+    name = request.form.get("name", DEFAULT_EXERCISE_NAME)
 
     try:
         fps = int(request.form.get("fps", "1"))
