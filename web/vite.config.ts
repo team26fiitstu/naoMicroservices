@@ -26,7 +26,7 @@ export default defineConfig({
       "/voiceLines": { target: "http://localhost:7001", changeOrigin: true },
       "/exercise": { target: "http://localhost:7001", changeOrigin: true },
       // voice command API
-      "/commands": { target: "http://localhost:8000", changeOrigin: true },
+      "/command": { target: "http://localhost:8000", changeOrigin: true },
       "/pose": { target: "http://localhost:8000", changeOrigin: true },
       // audio to text
       "/translate": { target: "http://localhost:9901", changeOrigin: true },
