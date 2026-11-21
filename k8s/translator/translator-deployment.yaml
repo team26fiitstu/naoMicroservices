@@ -37,6 +37,16 @@ spec:
               value: "/home/ubuntu/Pictures"
             - name: POSE_SERVICE_IMAGE_DIR
               value: "/images"
+            - name: HTTP_RETRY_MAX_ATTEMPTS
+              value: "3"
+            - name: HTTP_RETRY_BACKOFF_SECONDS
+              value: "1"
+            - name: HTTP_RETRY_BACKOFF_FACTOR
+              value: "2"
+            - name: HTTP_RETRY_MAX_BACKOFF_SECONDS
+              value: "10"
+            - name: HTTP_RETRY_STATUS_CODES
+              value: "429,500,502,503,504"
           readinessProbe:
             httpGet:
               path: /test
