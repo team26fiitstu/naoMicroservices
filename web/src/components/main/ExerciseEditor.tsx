@@ -16,7 +16,8 @@ import { useSelectedFile } from "@/hooks/useSelectedFile";
 import { useStatus, type StatusType } from "@/hooks/useStatus";
 import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
-import { poseLabel } from "@/lib/poses";
+import { poseLabel, findPoses } from "@/lib/poses";
+import { wordPattern } from "@/lib/text";
 import { pluralSk } from "@/lib/plural";
 import { failureText } from "@/lib/errors";
 import { MicButton } from "@/components/ui/micButton";
@@ -1110,21 +1111,6 @@ function RadioSubmenu({ icon: Icon, label, value, options, onChange }: RadioSubm
 }
 
 // ── local keyword fallback for VoiceEditPanel ─────────────────────
-const POSE_ALIASES: [string, string][] = [
-  ["drep", "crouch"],
-  ["úklon", "bow"], ["uklon", "bow"],
-  ["zamávaj", "wave"], ["zamavaj", "wave"], ["zamávajte", "wave"],
-  ["stoj", "stand"],
-  ["sed", "sit"], ["sadni", "sit"],
-  ["ruky hore", "hands_up"],
-  ["t-póza", "t_pose"], ["t póza", "t_pose"], ["tpóza", "t_pose"], ["t poza", "t_pose"],
-  ["ukáž vpravo", "point_right"], ["ukaz vpravo", "point_right"],
-  ["ukáž vľavo", "point_left"], ["ukaz vlavo", "point_left"],
-  ["crouch", "crouch"], ["bow", "bow"], ["wave", "wave"], ["stand", "stand"],
-  ["sit", "sit"], ["hands up", "hands_up"], ["t pose", "t_pose"], ["t-pose", "t_pose"],
-  ["point right", "point_right"], ["point left", "point_left"],
-];
-
 const NUM_WORDS: Record<string, number> = {
   "jeden": 1, "jedna": 1, "jedno": 1, "one": 1,
   "dva": 2, "dve": 2, "two": 2,
@@ -1138,23 +1124,16 @@ const NUM_WORDS: Record<string, number> = {
   "desať": 10, "ten": 10,
 };
 
+// Whole words only, so "štyri" is not read as "tri" and "sedem" not as "sed"
 function parseCommandLocally(transcript: string, poses: PoseCommand[], frameCount: number): ParsedCommand | null {
-  const lower = transcript.toLowerCase();
-  const side: "before" | "after" = /\bpred\b|before/.test(lower) ? "before" : "after";
+  const side = wordPattern("pred|before").test(transcript) ? "before" : "after";
 
-  let frame: number | null = null;
-  const digitMatch = lower.match(/\d+/);
-  if (digitMatch) frame = parseInt(digitMatch[0]);
-  else for (const [word, num] of Object.entries(NUM_WORDS)) {
-    if (lower.includes(word)) { frame = num; break; }
-  }
+  const digits = transcript.match(/\d+/);
+  const word = Object.keys(NUM_WORDS).find((w) => wordPattern(w).test(transcript));
+  const frame = digits ? parseInt(digits[0]) : word ? NUM_WORDS[word] : null;
   if (!frame || frame < 1 || frame > frameCount) return null;
 
-  let pose: string | null = null;
-  for (const [alias, key] of POSE_ALIASES) {
-    if (lower.includes(alias) && poses.some(p => p.name === key)) { pose = key; break; }
-  }
-
+  const pose = findPoses(transcript).find((key) => poses.some((p) => p.name === key)) ?? null;
   return { pose, frame, side };
 }
 

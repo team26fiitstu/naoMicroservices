@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
 import { MicButton } from "@/components/ui/micButton";
-import { POSE_LABELS, poseLabel } from "@/lib/poses";
+import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
@@ -12,31 +12,6 @@ import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
 const ALL_COMMANDS = Object.keys(POSE_LABELS);
 
 
-
-const VOICE_ALIASES: [string, string][] = [
-  ["drep", "crouch"],
-  ["úklon", "bow"], ["uklon", "bow"],
-  ["zamávaj", "wave"], ["zamavaj", "wave"], ["zamávajte", "wave"],
-  ["stoj", "stand"],
-  ["sed", "sit"], ["sadni", "sit"],
-  ["ruky hore", "hands_up"],
-  ["t-póza", "t_pose"], ["t póza", "t_pose"], ["tpóza", "t_pose"], ["t poza", "t_pose"],
-  ["ukáž vpravo", "point_right"], ["ukaz vpravo", "point_right"],
-  ["ukáž vľavo", "point_left"], ["ukaz vlavo", "point_left"],
-  ["crouch", "crouch"], ["bow", "bow"], ["wave", "wave"], ["stand", "stand"],
-  ["sit", "sit"], ["hands up", "hands_up"], ["t pose", "t_pose"], ["t-pose", "t_pose"],
-  ["point right", "point_right"], ["point left", "point_left"],
-];
-
-// Commands in spoken order, repeats kept, aliases matched as whole words
-function extractCommandsLocally(transcript: string): string[] {
-  const found: { at: number; cmd: string }[] = [];
-  for (const [alias, cmd] of VOICE_ALIASES) {
-    const pattern = new RegExp(`(?<!\\p{L})${alias}(?!\\p{L})`, "giu");
-    for (const match of transcript.matchAll(pattern)) found.push({ at: match.index, cmd });
-  }
-  return found.sort((a, b) => a.at - b.at).map(({ cmd }) => cmd);
-}
 
 async function interpretWithGPT(transcript: string): Promise<string[]> {
   const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
@@ -118,15 +93,15 @@ export function VoiceCommander() {
       const text = transcriptRef.current.trim();
       if (!text) return;
       if (!LLM_AVAILABLE) {
-        setDetected(extractCommandsLocally(text));
+        setDetected(findPoses(text));
         return;
       }
       setIsInterpreting(true);
       try {
         const cmds = await interpretWithGPT(text);
-        setDetected(cmds.length ? cmds : extractCommandsLocally(text));
+        setDetected(cmds.length ? cmds : findPoses(text));
       } catch {
-        setDetected(extractCommandsLocally(text));
+        setDetected(findPoses(text));
       } finally {
         setIsInterpreting(false);
       }
