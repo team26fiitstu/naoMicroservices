@@ -109,7 +109,8 @@ export default function SimpleUploadPage() {
             <p className="text-xs text-muted-foreground">
               {file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB · {isVideo ? "Video" : "Obrázok"}
             </p>
-            <Button onClick={sendToBackend} disabled={isUploading} className="w-full text-white">
+            {/* video waits for its range, otherwise the whole video would be processed */}
+            <Button onClick={sendToBackend} disabled={isUploading || (isVideo && !videoRange)} className="w-full text-white">
               {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Nahrávanie…</> : "Odoslať do API"}
             </Button>
           </div>

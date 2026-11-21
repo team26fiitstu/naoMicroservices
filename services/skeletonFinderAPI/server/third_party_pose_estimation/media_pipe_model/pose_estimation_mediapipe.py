@@ -109,9 +109,6 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
             print("Frame {} Processing".format(frame_number + 1))
 
             ret, frame = cap.read()  # get frame and success from video capture
-            if number_seconds_to_process != -1 and frame_number / video_frame_per_second > number_seconds_to_process:
-                print("Number seconds exceeded given threshold of " + str(number_seconds_to_process))
-                break
             if ret:  # if success is true, means frame exist
                 frame_number = frame_number + 1
                 frame_time = (frame_number - 1) / video_fps
@@ -121,9 +118,12 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
                     break
                 if range_start_frame is None:
                     range_start_frame = frame_number - 1
-                # sampling starts at range start
-                if __should_extract_frame(frame_number - 1 - range_start_frame,
-                                          video_frame_per_second, number_frames_per_sec):
+                # sampling and seconds limit count from range start
+                range_frame = frame_number - 1 - range_start_frame
+                if number_seconds_to_process != -1 and range_frame / video_frame_per_second > number_seconds_to_process:
+                    print("Number seconds exceeded given threshold of " + str(number_seconds_to_process))
+                    break
+                if __should_extract_frame(range_frame, video_frame_per_second, number_frames_per_sec):
                     for image_config in __process_video_image(frame, out,
                                                               total_fps, fps_list, time_list,
                                                               min_detection_confidence,
