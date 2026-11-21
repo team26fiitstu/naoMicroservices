@@ -7,8 +7,10 @@ Flask API for sending pose and speech commands to a SoftBank NAO robot using the
 From the repository root, set the robot address and start the service:
 
 ```sh
-NAO_IP=<robot-ip> NAO_PORT=9559 docker compose -f docker-compose.dev.yml up --build naorobotapi
+NAO_IP=127.0.0.1 NAO_PORT=9559 docker compose -f docker-compose.dev.yml up --build naorobotapi
 ```
+
+Replace `127.0.0.1` with the reachable IP address of your NAO robot to use robot commands.
 
 The API listens on `http://localhost:5000`. The container uses Python 2.7 and the bundled NAOqi libraries for `linux/amd64`.
 
