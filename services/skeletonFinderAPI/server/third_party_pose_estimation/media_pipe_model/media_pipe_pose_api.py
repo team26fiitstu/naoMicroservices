@@ -1,4 +1,5 @@
 import json
+import math
 from typing import Dict, Union, List
 
 from PIL import Image
@@ -16,6 +17,22 @@ def text_response(payload: str, status: int = 200):
 
 
 media_pipe_pose_api = Blueprint("media_pipe_pose_api", __name__, template_folder="templates")
+
+
+def parse_time_range(args):
+    """Optional start_seconds/end_seconds query params, end -1 means until end."""
+    try:
+        start = float(args.get("start_seconds", 0))
+        end = float(args.get("end_seconds", -1))
+    except ValueError:
+        raise ValueError("start_seconds and end_seconds must be numbers") from None
+    if not math.isfinite(start) or not math.isfinite(end):
+        raise ValueError("start_seconds and end_seconds must be finite numbers")
+    if start < 0:
+        raise ValueError("start_seconds must not be negative")
+    if end != -1 and end <= start:
+        raise ValueError("end_seconds must be greater than start_seconds")
+    return start, end
 
 
 @media_pipe_pose_api.route("/pose_from_image", methods=["GET"])
@@ -45,8 +62,10 @@ def pose_from_video_local():
         attach_visualization = bool(request.args.get("attach_visualization", ""))
         number_frames_per_sec = int(request.args.get("number_frames_per_sec", 1))
         number_seconds_to_process = int(request.args.get("number_seconds_to_process", -1))
-        start_seconds = float(request.args.get("start_seconds", 0))
-        end_seconds = float(request.args.get("end_seconds", -1))
+        try:
+            start_seconds, end_seconds = parse_time_range(request.args)
+        except ValueError as e:
+            return application_json_response({"error": str(e)}, 400)
         evaluation_response = list(evaluate_pose_from_video_mediapipe(file_location, is_base64encoded=False,
                                                                       number_frames_per_sec=number_frames_per_sec,
                                                                       number_seconds_to_process=
@@ -81,8 +100,10 @@ def pose_from_video():
     attach_visualization = bool(request.args.get("attach_visualization", ""))
     number_frames_per_sec = int(request.args.get("number_frames_per_sec", 1))
     number_seconds_to_process = int(request.args.get("number_seconds_to_process", -1))
-    start_seconds = float(request.args.get("start_seconds", 0))
-    end_seconds = float(request.args.get("end_seconds", -1))
+    try:
+        start_seconds, end_seconds = parse_time_range(request.args)
+    except ValueError as e:
+        return application_json_response({"error": str(e)}, 400)
     evaluation_response = list(evaluate_pose_from_video_mediapipe(encoded_video, is_base64encoded=True,
                                                                   number_frames_per_sec=number_frames_per_sec,
                                                                   number_seconds_to_process=number_seconds_to_process,

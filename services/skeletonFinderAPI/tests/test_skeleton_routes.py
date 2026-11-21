@@ -75,6 +75,19 @@ class SkeletonRoutes(OfflineCase):
         self.assertEqual(model.call_args.kwargs["start_seconds"], 0)
         self.assertEqual(model.call_args.kwargs["end_seconds"], -1)
 
+    def test_invalid_video_range_is_rejected_before_processing(self):
+        for query in ("start_seconds=abc", "start_seconds=nan", "end_seconds=inf", "start_seconds=-1",
+                      "start_seconds=5&end_seconds=5", "start_seconds=5&end_seconds=2"):
+            for method, path in (("post", "/media_pipe_pose/pose_from_video"),
+                                 ("get", "/media_pipe_pose/pose_from_video?file_location=fake-video")):
+                with self.subTest(query=query, method=method):
+                    with patch.object(mediapipe, "evaluate_pose_from_video_mediapipe") as model:
+                        separator = "&" if "?" in path else "?"
+                        result = getattr(self.client, method)(f"{path}{separator}{query}", data="encoded")
+                    self.assertEqual(result.status_code, 400)
+                    self.assertIn("error", result.json)
+                    model.assert_not_called()
+
     def test_get_pose_routes_and_missing_path(self):
         cases = (
             ("/media_pipe_pose/pose_from_image", mediapipe, "evaluate_pose_mediapipe", {"joint": 1}),
