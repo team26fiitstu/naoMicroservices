@@ -223,7 +223,7 @@ export function VoiceCommander() {
                 className={[
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-200 border",
                   item.status === "running" ? "bg-primary/10 border-primary/20" : "",
-                  item.status === "done"    ? "bg-green-500/10 border-green-500/20" : "",
+                  item.status === "done"    ? "bg-success/10 border-success/20" : "",
                   item.status === "error"   ? "bg-destructive/10 border-destructive/20" : "",
                   item.status === "pending" ? "bg-muted/40 border-border/40" : "",
                 ].join(" ")}
@@ -231,7 +231,7 @@ export function VoiceCommander() {
                 <span className="flex-shrink-0">
                   {item.status === "pending" && <Clock        className="h-3.5 w-3.5 text-muted-foreground" />}
                   {item.status === "running" && <Loader2      className="h-3.5 w-3.5 text-primary animate-spin" />}
-                  {item.status === "done"    && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                  {item.status === "done"    && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
                   {item.status === "error"   && <XCircle      className="h-3.5 w-3.5 text-destructive" />}
                 </span>
                 <span className="font-medium flex-1">{poseLabel(item.command)}</span>

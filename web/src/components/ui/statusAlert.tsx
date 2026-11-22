@@ -3,8 +3,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Status } from "@/hooks/useStatus";
 
 const STYLES = {
-  success: { icon: CheckCircle, className: "border-green-500 bg-green-50 dark:bg-green-950/20 [&>svg]:text-green-600" },
-  info: { icon: Info, className: "border-blue-500 bg-blue-50 dark:bg-blue-950/20 [&>svg]:text-blue-600" },
+  success: { icon: CheckCircle, className: "border-success/50 bg-success/10 [&>svg]:text-success" },
+  info: { icon: Info, className: "border-info/50 bg-info/10 [&>svg]:text-info" },
   error: { icon: AlertCircle, className: "" },
 };
 
