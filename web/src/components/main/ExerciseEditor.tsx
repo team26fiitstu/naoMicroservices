@@ -13,6 +13,7 @@ import { SelectedFileCard } from "@/components/ui/selectedFileCard";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 import { useSelectedFile } from "@/hooks/useSelectedFile";
+import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
 import { useStatus, type StatusType } from "@/hooks/useStatus";
 import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
@@ -1140,35 +1141,14 @@ type VoiceEditPanelProps = {
 type ParsedCommand = { pose: string | null; frame: number; side: "before" | "after" };
 
 function VoiceEditPanel({ poses, frameCount, onInsert, onClose }: VoiceEditPanelProps) {
-  const [listening, setListening]   = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const { listening, transcript, start, stop: stopListening, reset: resetTranscript } = useSpeechRecognition();
   const [phase, setPhase]           = useState<"idle" | "parsing" | "pick_pose" | "confirm" | "error">("idle");
   const [parsed, setParsed]         = useState<ParsedCommand | null>(null);
   const [pickedPose, setPickedPose] = useState("");
   const [errorMsg, setErrorMsg]     = useState("");
-  const recRef = useRef<any>(null);
-
   const startListening = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { setErrorMsg("Rozpoznávanie hlasu nie je podporované — použite Chrome alebo Edge."); setPhase("error"); return; }
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = "sk-SK";
-    rec.onstart  = () => setListening(true);
-    rec.onend    = () => setListening(false);
-    rec.onerror  = () => { setListening(false); };
-    rec.onresult = (e: any) => {
-      let text = "";
-      for (let i = e.resultIndex; i < e.results.length; i++)
-        text += e.results[i][0].transcript;
-      setTranscript(text);
-    };
-    recRef.current = rec;
-    rec.start();
+    if (!start()) { setErrorMsg(SPEECH_UNSUPPORTED); setPhase("error"); }
   };
-
-  const stopListening = () => recRef.current?.stop();
 
   const applyParsed = (result: ParsedCommand) => {
     setParsed(result);
@@ -1237,7 +1217,7 @@ No other text, only JSON.`,
     onClose();
   };
 
-  const reset = () => { setPhase("idle"); setParsed(null); setTranscript(""); setPickedPose(""); };
+  const reset = () => { setPhase("idle"); setParsed(null); resetTranscript(); setPickedPose(""); };
 
   return (
     <Card className="gap-4 px-6">

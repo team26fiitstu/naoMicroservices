@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { MicButton } from "@/components/ui/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
 import { API_BASE } from "@/lib/api";
+import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
 
@@ -44,84 +45,37 @@ type QueueItem = {
 };
 
 export function VoiceCommander() {
-  const [listening, setListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
   const [detected, setDetected] = useState<string[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isInterpreting, setIsInterpreting] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
-  const transcriptRef = useRef("");
-
-  const startListening = useCallback(() => {
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SR) {
-      alert("Rozpoznávanie hlasu nie je podporované — použite Chrome alebo Edge.");
+  const interpret = async (text: string) => {
+    if (!text) return;
+    if (!LLM_AVAILABLE) {
+      setDetected(findPoses(text));
       return;
     }
+    setIsInterpreting(true);
+    try {
+      const cmds = await interpretWithGPT(text);
+      setDetected(cmds.length ? cmds : findPoses(text));
+    } catch {
+      setDetected(findPoses(text));
+    } finally {
+      setIsInterpreting(false);
+    }
+  };
 
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = "sk-SK";
+  const { listening, transcript, start, stop: stopListening, reset } = useSpeechRecognition(interpret);
 
-    rec.onstart = () => {
-      setListening(true);
-      setTranscript("");
-      setDetected([]);
-      transcriptRef.current = "";
-    };
-
-    rec.onresult = (e: any) => {
-      let final = "";
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t;
-        else interim += t;
-      }
-      const current = final || interim;
-      transcriptRef.current = current;
-      setTranscript(current);
-    };
-
-    rec.onend = async () => {
-      setListening(false);
-      const text = transcriptRef.current.trim();
-      if (!text) return;
-      if (!LLM_AVAILABLE) {
-        setDetected(findPoses(text));
-        return;
-      }
-      setIsInterpreting(true);
-      try {
-        const cmds = await interpretWithGPT(text);
-        setDetected(cmds.length ? cmds : findPoses(text));
-      } catch {
-        setDetected(findPoses(text));
-      } finally {
-        setIsInterpreting(false);
-      }
-    };
-
-    rec.onerror = () => {
-      setListening(false);
-    };
-
-    recognitionRef.current = rec;
-    rec.start();
-  }, []);
-
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-  }, []);
+  const startListening = () => {
+    setDetected([]);
+    if (!start()) alert(SPEECH_UNSUPPORTED);
+  };
 
   const clearResult = () => {
-    setTranscript("");
+    reset();
     setDetected([]);
   };
 
