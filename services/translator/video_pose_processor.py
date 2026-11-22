@@ -52,6 +52,8 @@ def process_video_bytes(
     number_frames_per_sec: int = 1,
     number_seconds_to_process: int = -1,
     attach_visualization: bool = True,
+    start_seconds: float = 0,
+    end_seconds: float = -1,
 ) -> Dict[str, Any]:
     """
     Send a video to pose_from_video, write debug images and JSON landmarks,
@@ -63,6 +65,8 @@ def process_video_bytes(
         number_frames_per_sec: sampling rate for pose_from_video
         number_seconds_to_process: -1 = full video
         attach_visualization: ask pose service to add visualization_base64
+        start_seconds: range start in seconds
+        end_seconds: range end, -1 = until end
 
     Returns:
         dict with:
@@ -87,6 +91,8 @@ def process_video_bytes(
             "number_frames_per_sec": number_frames_per_sec,
             "number_seconds_to_process": number_seconds_to_process,
             "attach_visualization": "true" if attach_visualization else "false",
+            "start_seconds": start_seconds,
+            "end_seconds": end_seconds,
         },
         data=encoded_video,
         timeout=60,

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "radix-ui";
 import { AudioRecorderComponent } from "@/components/ui/audioRecorder";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 import {
   Loader2,
   Upload,
@@ -25,6 +27,7 @@ import {
 } from "lucide-react";
 
 import "@/components/styles/toggle.css";
+import { API_BASE } from "@/lib/api";
 
 // ── pose display names (Slovak) ───────────────────────────────────
 const POSE_DISPLAY_SK: Record<string, string> = {
@@ -40,10 +43,6 @@ const POSE_DISPLAY_SK: Record<string, string> = {
 };
 
 // ── API config ────────────────────────────────────────────────────
-const UPLOAD_API = "http://localhost:7000"; //empty for reverse proxy nginx
-const EDITOR_API = "http://localhost:7001";
-const POSES_API  = "http://localhost:8000";
-const ROBOT_API  = "http://localhost:5000";
 const LLM_API_BASE = import.meta.env.VITE_LLM_API_BASE ?? "https://litellm.blockfinlab.xyz";
 const LLM_API_KEY  = import.meta.env.VITE_LLM_API_KEY ?? "";
 const LLM_MODEL    = "gpt-5.4-fiit";
@@ -104,6 +103,10 @@ export default function ExerciseEditor() {
   const [uploading, setUploading]     = useState(false);
   const [fps, setFps]                 = useState(1);
   const [maxFrames, setMaxFrames]     = useState(8);
+  // video waiting for range choice before upload
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingUrl, setPendingUrl]   = useState<string | null>(null);
+  const [videoRange, setVideoRange]   = useState<VideoRange | null>(null);
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [running, setRunning]         = useState(false);
   const [insertingAt, setInsertingAt] = useState<number | null>(null);
@@ -132,7 +135,7 @@ export default function ExerciseEditor() {
 
   // ── load poses on mount ───────────────────────────────────────
   useEffect(() => {
-    fetch(`${POSES_API}/commands`)
+    fetch(`${API_BASE}/commands`)
       .then((r) => r.json())
       .then((data) => {
         // Backend may return string[], { commands: string[] }, or a keyed object
@@ -151,14 +154,32 @@ export default function ExerciseEditor() {
     if (type !== "error") setTimeout(() => setStatus(null), 4000);
   };
 
-  // ── upload video ──────────────────────────────────────────────
-  // POST /exercise/from_video  (multipart, field "video")
-  // Returns the saved exercise config — extract id from it.
-  const handleUpload = useCallback(async (file: File) => {
+  // ── select video ──────────────────────────────────────────────
+  const selectVideo = (file: File) => {
     if (!file.type.startsWith("video/")) {
       showStatus("error", "Prosím vyberte video súbor.");
       return;
     }
+    setStatus(null);
+    setVideoRange(null);
+    setPendingFile(file);
+    setPendingUrl(URL.createObjectURL(file));
+  };
+
+  const clearPendingVideo = () => {
+    setPendingFile(null);
+    setPendingUrl(null);
+    setVideoRange(null);
+  };
+
+  useEffect(() => {
+    return () => { if (pendingUrl) URL.revokeObjectURL(pendingUrl); };
+  }, [pendingUrl]);
+
+  // ── upload video ──────────────────────────────────────────────
+  // POST /exercise/from_video  (multipart, field "video", optional "start"/"end" in seconds)
+  // Returns the saved exercise config — extract id from it.
+  const handleUpload = useCallback(async (file: File, range: VideoRange | null) => {
     setUploading(true);
     setStatus(null);
     setFrames([]);
@@ -169,8 +190,9 @@ export default function ExerciseEditor() {
       fd.append("video", file);
       fd.append("fps", String(fps));
       fd.append("max_frames", String(maxFrames));
+      appendVideoRange(fd, range);
 
-      const res = await fetch(`${UPLOAD_API}/exercise/from_video`, {
+      const res = await fetch(`${API_BASE}/exercise/from_video`, {
         method: "POST",
         body: fd,
       });
@@ -193,7 +215,7 @@ export default function ExerciseEditor() {
   const loadFrames = useCallback(async (id: string): Promise<Frame[]> => {
     setLoadingFrames(true);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${id}/frames`);
+      const res = await fetch(`${API_BASE}/exercise/${id}/frames`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -233,7 +255,7 @@ export default function ExerciseEditor() {
       }
       setPoseFrameMap(freshPoseMap);
       // fetch exercise name + existing calorie/description estimates
-      fetch(`${EDITOR_API}/exercise/${id}`)
+      fetch(`${API_BASE}/exercise/${id}`)
         .then((r) => r.json())
         .then((cfg) => {
           if (cfg.name) setExerciseName(cfg.name);
@@ -296,7 +318,7 @@ export default function ExerciseEditor() {
       const desc = parsed.description?.trim();
       if (desc) {
         setDescription(desc);
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description: desc }),
@@ -317,7 +339,7 @@ export default function ExerciseEditor() {
     setInsertingAt(position);
     const oldIdxs = new Set(frames.map((f) => f.idx));
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/from_pose`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/from_pose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pose_name: poseName, position }),
@@ -343,7 +365,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setDeletingAt(frameIdx);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/${frameIdx}`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/${frameIdx}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -365,7 +387,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     try {
       const frame_sequence = (framesToSave ?? frames).map((f) => f.idx);
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/sequence`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/sequence`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ frame_sequence }),
@@ -381,7 +403,7 @@ export default function ExerciseEditor() {
   const renameExercise = useCallback(async (name: string) => {
     if (!exerciseId || !name.trim()) return;
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/config`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
@@ -438,7 +460,7 @@ export default function ExerciseEditor() {
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
         // persist to backend
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ calories: kcal }),
@@ -458,7 +480,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setRunning(true);
     try {
-      const res = await fetch(`${UPLOAD_API}/exercise/${exerciseId}/run`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/run`, {
         method: "POST",
         // No body — repetitions defaults to the value stored in the exercise config.
       });
@@ -475,7 +497,7 @@ export default function ExerciseEditor() {
   const onDropZone = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
+    if (file) selectVideo(file);
   };
 
   // ── render ────────────────────────────────────────────────────
@@ -574,8 +596,36 @@ export default function ExerciseEditor() {
         </div>
       )}
 
+      {/* ── range selection ── */}
+      {!exerciseId && pendingFile && pendingUrl && (
+        <Card className="gap-4 px-6">
+          <div className="flex items-start gap-3">
+            <Film className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{pendingFile.name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Vyberte časť videa, z ktorej sa vytvorí cvičenie.</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto -mt-1 -mr-2 shrink-0"
+              onClick={clearPendingVideo}
+              disabled={uploading}
+              aria-label="Zrušiť"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <VideoTrimmer key={pendingUrl} src={pendingUrl} onChange={setVideoRange} />
+          <Button onClick={() => handleUpload(pendingFile, videoRange)} disabled={uploading || !videoRange} className="w-full">
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? "Spracovanie videa…" : "Spracovať vybranú časť"}
+          </Button>
+        </Card>
+      )}
+
       {/* ── upload zone (shown when no exercise loaded) ── */}
-      {!exerciseId && (
+      {!exerciseId && !pendingFile && (
         <Card
           className={[
             "border-2 border-dashed transition-colors duration-200 cursor-pointer",
@@ -610,7 +660,7 @@ export default function ExerciseEditor() {
             type="file"
             accept="video/*"
             className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) selectVideo(f); }}
           />
         </Card>
       )}
@@ -667,7 +717,7 @@ export default function ExerciseEditor() {
 
           <button
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
-            onClick={() => { setExerciseId(null); setFrames([]); setStatus(null); setExerciseName(""); setCalories(null); setDescription(null); }}
+            onClick={() => { clearPendingVideo(); setExerciseId(null); setFrames([]); setStatus(null); setExerciseName(""); setCalories(null); setDescription(null); }}
           >
             <Upload className="h-3.5 w-3.5" />
             Nahrať iné video
@@ -845,8 +895,8 @@ function FrameCard({
   setOpenVoiceLines,
   ...dragProps
 }: FrameCardProps) {
-  const imageUrl = `${EDITOR_API}/exercise/${exerciseId}/frame/${frame.idx}/image`;
-  const poseImageUrl = frame.pose_name ? `${POSES_API}/pose/${frame.pose_name}/image` : null;
+  const imageUrl = `${API_BASE}/exercise/${exerciseId}/frame/${frame.idx}/image`;
+  const poseImageUrl = frame.pose_name ? `${API_BASE}/pose/${frame.pose_name}/image` : null;
   const [imgError, setImgError] = useState(false);
   const [poseImgError, setPoseImgError] = useState(false);
   const [beforeVal, setBeforeVal] = useState("");
@@ -900,7 +950,7 @@ function FrameCard({
       if (!overallRecordedMessage || !configLoaded) {
        setConfigLoaded(true);
         try {
-          fetch(`${EDITOR_API}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`, {
+          fetch(`${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`, {
             method: "GET",
           }).then((response) => {
             if (response.ok) {
@@ -953,7 +1003,7 @@ function FrameCard({
       if (overallRecordedMessage["voice_lines_configs"] !== undefined ) {
         for (const [key, value] of Object.entries(overallRecordedMessage["voice_lines_configs"])) {
           try {
-            fetch(`${EDITOR_API}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}/${value["fileName"]}`, {
+            fetch(`${API_BASE}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}/${value["fileName"]}`, {
               method: "GET",
             }).then((response) => {
               if (response.ok) {
@@ -983,7 +1033,7 @@ function FrameCard({
   },[toggleText]);
 
   const saveAudioFile = async (audioInBase64, fileNameWithFormat) => {
-    const res = await fetch(`${EDITOR_API}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}`, {
+    const res = await fetch(`${API_BASE}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1002,7 +1052,7 @@ function FrameCard({
     overallRecordedMessage["lang"] = speechLanguage;
     overallRecordedMessage["speed"] = speechSpeed;
     try {
-      const res = await fetch(`${EDITOR_API}/voiceLines/config/exercise/${exerciseId}/frame/${frameIdx}`, {
+      const res = await fetch(`${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frameIdx}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1025,7 +1075,7 @@ function FrameCard({
       setNaoSaying(true);
       console.log(textConfigToBeSaid);
       try {
-        const res = await fetch(`${ROBOT_API}/voiceLines/applyVoiceLine`, {
+        const res = await fetch(`${API_BASE}/voiceLines/applyVoiceLine`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"

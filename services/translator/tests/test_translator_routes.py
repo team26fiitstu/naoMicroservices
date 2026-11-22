@@ -102,6 +102,39 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(create.call_args.kwargs["name"], "demo")
         self.assertEqual(process.call_args.kwargs["number_frames_per_sec"], 2)
         self.assertEqual(process.call_args.kwargs["number_seconds_to_process"], 5)
+
+    def test_video_range_reaches_pose_processing(self):
+        cases = (
+            ({}, (0, -1)),
+            ({"start": "2.5", "end": "7.25"}, (2.5, 7.25)),
+            ({"start": "3"}, (3, -1)),
+        )
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                with patch.object(translator, "process_video_bytes", return_value=dict(SUMMARY)) as process, \
+                        patch.object(translator, "translate_arms", return_value=ANGLES), \
+                        patch.object(translator, "call_exercise_create", return_value={"id": "ex1"}):
+                    result = self.upload("/exercise/from_video", "video", **fields)
+                self.assertEqual(result.status_code, 201)
+                kwargs = process.call_args.kwargs
+                self.assertEqual((kwargs["start_seconds"], kwargs["end_seconds"]), expected)
+
+    def test_invalid_video_range_is_rejected_before_processing(self):
+        cases = (
+            {"start": "abc"},
+            {"start": "-1"},
+            {"start": "5", "end": "5"},
+            {"start": "5", "end": "2"},
+            {"end": "nan"},
+        )
+        for fields in cases:
+            with self.subTest(fields=fields):
+                with patch.object(translator, "process_video_bytes") as process:
+                    result = self.upload("/exercise/from_video", "video", **fields)
+                self.assertEqual(result.status_code, 400)
+                self.assertIn("error", result.json)
+                process.assert_not_called()
+
     def test_frame_image_retry_resends_full_image(self):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = os.path.join(tmp, "frame.png")

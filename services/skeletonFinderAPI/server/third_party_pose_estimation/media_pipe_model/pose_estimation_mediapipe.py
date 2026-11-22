@@ -15,19 +15,6 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 
-def __should_extract_frame(frame_number: int, fps: int = 30, number_frames_per_sec: int = 1):
-    if int(fps // number_frames_per_sec) == 0:
-        if frame_number % fps == 0:
-            return True
-        else:
-            return False
-    for frame_occurrence in range(0, int(fps), int(fps // number_frames_per_sec)):
-        if (frame_occurrence == 0 and frame_number % fps == 0) or (
-                frame_occurrence != 0 and frame_number % frame_occurrence == 0):
-            return True
-    return False
-
-
 def __process_video_image(orig_image, out: cv2.VideoWriter, total_fps: float,
                           fps_list: List[float], time_list: list[float],
                           min_detection_confidence: float = 0.5,
@@ -58,11 +45,11 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
                                        min_tracking_confidence: float = 0.5, number_frames_per_sec: int = 1,
                                        number_seconds_to_process: int = -1, video_frame_per_second: int = 30,
                                        is_base64encoded: bool = True,
-                                       attach_visualization: bool = False) -> Iterator[Dict]:
+                                       attach_visualization: bool = False,
+                                       start_seconds: float = 0, end_seconds: float = -1) -> Iterator[Dict]:
+    """Pose per sampled frame by source FPS; negative end_seconds means until end, video_frame_per_second is fallback FPS."""
     source = base64.b64decode(source) if is_base64encoded else source
-    if number_frames_per_sec > video_frame_per_second:
-        raise Exception("Number of frames per sec to extract cannot be higher as fps!")
-    elif number_frames_per_sec < 1:
+    if number_frames_per_sec < 1:
         raise Exception("Number of frames per sec to extract should be at least 1")
     frame_count = 0  # count no of frames
     total_fps = 0  # count total fps
@@ -83,6 +70,12 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
         print('Error while trying to read video. Please check path again')
         raise SystemExit()
     else:
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not video_fps or video_fps <= 0:
+            video_fps = video_frame_per_second
+        if number_frames_per_sec > video_fps:
+            raise Exception("Number of frames per sec to extract cannot be higher as fps!")
+        range_start_frame = None
         frame_width = int(cap.get(3))  # get video frame width
         frame_height = int(cap.get(4))  # get video frame height
 
@@ -92,7 +85,7 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
         if attach_visualization:
             resize_height, resize_width = frame_width, frame_height
             out = cv2.VideoWriter(f"{source}_keypoint.mp4",
-                                  cv2.VideoWriter_fourcc(*'mp4v'), video_frame_per_second,
+                                  cv2.VideoWriter_fourcc(*'mp4v'), video_fps,
                                   (resize_width, resize_height))
 
         processed = 0
@@ -102,12 +95,22 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
             print("Frame {} Processing".format(frame_number + 1))
 
             ret, frame = cap.read()  # get frame and success from video capture
-            if number_seconds_to_process != -1 and frame_number / video_frame_per_second > number_seconds_to_process:
-                print("Number seconds exceeded given threshold of " + str(number_seconds_to_process))
-                break
             if ret:  # if success is true, means frame exist
                 frame_number = frame_number + 1
-                if __should_extract_frame(frame_number - 1, video_frame_per_second, number_frames_per_sec):
+                frame_time = (frame_number - 1) / video_fps
+                if frame_time < start_seconds:
+                    continue
+                if 0 <= end_seconds < frame_time:
+                    break
+                if range_start_frame is None:
+                    range_start_frame = frame_number - 1
+                # sampling and seconds limit count from range start
+                range_frame = frame_number - 1 - range_start_frame
+                if number_seconds_to_process != -1 and range_frame / video_fps > number_seconds_to_process:
+                    print("Number seconds exceeded given threshold of " + str(number_seconds_to_process))
+                    break
+                # first frame of each 1/number_frames_per_sec slot, compared without division to avoid float drift
+                if range_frame * number_frames_per_sec >= frame_count * video_fps:
                     for image_config in __process_video_image(frame, out,
                                                               total_fps, fps_list, time_list,
                                                               min_detection_confidence,
@@ -122,8 +125,9 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
 
         cap.release()
         # cv2.destroyAllWindows()
-        avg_fps = total_fps / frame_count
-        print(f"Average FPS: {avg_fps:.3f}")
+        if frame_count:
+            avg_fps = total_fps / frame_count
+            print(f"Average FPS: {avg_fps:.3f}")
 
 
 def __evaluate_pose_mediapipe_pil_image(orig_image: Image, min_detection_confidence: float = 0.5,
