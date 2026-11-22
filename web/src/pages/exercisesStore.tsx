@@ -4,12 +4,21 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
+import { ConfirmDialog } from "@/components/ui/confirmDialog";
+import { exerciseDisplayName } from "@/lib/exerciseName";
 import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
 import { API_BASE } from "@/lib/api";
-import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen } from "lucide-react";
+import { failureText } from "@/lib/errors";
+import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen, Upload } from "lucide-react";
+
+// created_at is UTC without timezone suffix
+const formatCreatedAt = (value: string) =>
+  new Date(/Z|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`).toLocaleString("sk-SK", {
+    day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 
 type Exercise = {
   id: string;
@@ -27,6 +36,7 @@ export default function ExercisesStore() {
   const { status, show: showStatus } = useStatus();
   const [running, setRunning]     = useState<string | null>(null);
   const [deleting, setDeleting]   = useState<string | null>(null);
+  const [toDelete, setToDelete]   = useState<Exercise | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -35,8 +45,8 @@ export default function ExercisesStore() {
       const res = await fetch(`${API_BASE}/exercise/list`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises(await res.json());
-    } catch {
-      showStatus("error", "Načítanie cvičení zlyhalo.");
+    } catch (err) {
+      showStatus("error", failureText("Načítanie cvičení zlyhalo", err));
     } finally {
       setLoading(false);
     }
@@ -45,14 +55,14 @@ export default function ExercisesStore() {
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (id: string) => {
-setDeleting(id);
+    setDeleting(id);
     try {
       const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
-    } catch {
-      showStatus("error", "Odstránenie zlyhalo.");
+    } catch (err) {
+      showStatus("error", failureText("Odstránenie zlyhalo", err));
     } finally {
       setDeleting(null);
     }
@@ -64,8 +74,8 @@ setDeleting(id);
       const res = await fetch(`${API_BASE}/exercise/${id}/run`, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showStatus("success", "Cvičenie odoslané robotovi!");
-    } catch {
-      showStatus("error", "Spustenie zlyhalo.");
+    } catch (err) {
+      showStatus("error", failureText("Spustenie zlyhalo", err));
     } finally {
       setRunning(null);
     }
@@ -81,8 +91,8 @@ setDeleting(id);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises((prev) => prev.map((e) => e.id === id ? { ...e, name } : e));
       return true;
-    } catch {
-      showStatus("error", "Premenovanie zlyhalo.");
+    } catch (err) {
+      showStatus("error", failureText("Premenovanie zlyhalo", err));
       return false;
     }
   };
@@ -100,8 +110,12 @@ setDeleting(id);
 
       {!loading && exercises.length === 0 && (
         <Card className="flex flex-col items-center justify-center py-16 gap-3">
-          <Film className="h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">Zatiaľ žiadne cvičenia. Nahrajte video pre vytvorenie.</p>
+          <Film className="h-8 w-8 text-muted-foreground opacity-40" />
+          <p className="text-sm text-muted-foreground">Zatiaľ žiadne cvičenia.</p>
+          <Button size="sm" variant="outline" onClick={() => navigate("/upload")}>
+            <Upload className="h-3.5 w-3.5" />
+            Nahrať video
+          </Button>
         </Card>
       )}
 
@@ -117,7 +131,7 @@ setDeleting(id);
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                {new Date(ex.created_at).toLocaleDateString("sk-SK")}
+                {formatCreatedAt(ex.created_at)}
               </span>
               {ex.calories != null && (
                 <span className="inline-flex items-center gap-1.5">
@@ -147,7 +161,7 @@ setDeleting(id);
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => handleDelete(ex.id)}
+              onClick={() => setToDelete(ex)}
               disabled={deleting === ex.id}
               aria-label="Odstrániť cvičenie"
               title="Odstrániť cvičenie"
@@ -161,6 +175,14 @@ setDeleting(id);
         </Card>
       ))}
 
+      <ConfirmDialog
+        open={toDelete !== null}
+        onOpenChange={(open) => { if (!open) setToDelete(null); }}
+        title="Odstrániť cvičenie?"
+        description={`Cvičenie „${exerciseDisplayName(toDelete?.name)}“ sa natrvalo odstráni.`}
+        confirmLabel="Odstrániť"
+        onConfirm={() => { if (toDelete) handleDelete(toDelete.id); }}
+      />
     </div>
   );
 }

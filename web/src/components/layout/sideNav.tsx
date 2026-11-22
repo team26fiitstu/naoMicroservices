@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Moon, Sun } from "lucide-react";
+import { Bot, Moon, Sun } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/navigation";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 
@@ -9,7 +9,8 @@ export function SideNav() {
 
   return (
     <aside className="hidden md:flex flex-col w-56 sticky top-0 h-screen border-r border-border bg-card px-3 py-6 gap-1 shrink-0">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-4">
+      <p className="flex items-center gap-2 text-base font-semibold text-foreground px-3 mb-4">
+        <Bot className="h-5 w-5 shrink-0" />
         NAO Cvičenia
       </p>
       {NAV_ITEMS.map(({ path, icon: Icon, label }) => {

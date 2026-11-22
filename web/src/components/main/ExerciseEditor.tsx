@@ -23,6 +23,7 @@ import { failureText } from "@/lib/errors";
 import { MicButton } from "@/components/ui/micButton";
 import { AiBadge } from "@/components/ui/aiBadge";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
+import { ConfirmDialog } from "@/components/ui/confirmDialog";
 import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
 import { API_BASE } from "@/lib/api";
 import {
@@ -216,7 +217,7 @@ export default function ExerciseEditor() {
   // ── load frames ───────────────────────────────────────────────
   // GET /exercise/<id>/frames  → plain array of frame objects
   // Each frame has: index (int), keypoints, nao_angles, joint_values
-  const loadFrames = useCallback(async (id: string): Promise<Frame[]> => {
+  const loadFrames = useCallback(async (id: string, quiet = false): Promise<Frame[]> => {
     setLoadingFrames(true);
     try {
       const res = await fetch(`${API_BASE}/exercise/${id}/frames`);
@@ -269,7 +270,7 @@ export default function ExerciseEditor() {
           else generateDescription(id, normalised);
         })
         .catch(() => {});
-      showStatus("success", `${pluralSk(normalised.length, "Načítaná", "Načítané", "Načítaných")} ${normalised.length} ${pluralSk(normalised.length, "snímka", "snímky", "snímok")}.`);
+      if (!quiet) showStatus("success", `${pluralSk(normalised.length, "Načítaná", "Načítané", "Načítaných")} ${normalised.length} ${pluralSk(normalised.length, "snímka", "snímky", "snímok")}.`);
       return normalised;
     } catch (err) {
       showStatus("error", failureText("Načítanie snímok zlyhalo", err));
@@ -349,13 +350,13 @@ export default function ExerciseEditor() {
         body: JSON.stringify({ pose_name: poseName, position }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const newFrames = await loadFrames(exerciseId);
+      const newFrames = await loadFrames(exerciseId, true);
       const newFrame = newFrames.find((f) => !oldIdxs.has(f.idx));
       if (newFrame) {
         setPoseFrameMap((prev) => ({ ...prev, [newFrame.idx]: poseName }));
       }
       generateDescription(exerciseId, newFrames);
-      showStatus("success", `Póza "${poseName}" vložená.`);
+      showStatus("success", `Póza „${poseLabel(poseName)}“ vložená.`);
     } catch (err) {
       showStatus("error", failureText("Vloženie zlyhalo", err));
     } finally {
@@ -644,7 +645,7 @@ export default function ExerciseEditor() {
           </div>
 
           {/* horizontal scrollable frame strip */}
-          <div className="overflow-x-auto md:overflow-x-auto overflow-y-auto pb-3">
+          <div className="overflow-x-auto overflow-y-auto pb-3">
             <div className="flex flex-col md:flex-row items-stretch gap-3 md:min-w-max">
               {frames.map((frame, i) => (
                 <div key={`${frame.idx}-${i}`} className="flex items-stretch gap-3">
@@ -662,11 +663,9 @@ export default function ExerciseEditor() {
                     onDelete={() => deleteFrame(frame.idx)}
                     inserting={insertingAt !== null}
                     deleting={deletingAt === frame.idx}
-                    isDragOver={false}
                     showStatus={showStatus}
                     draggable
                     onDragStart={() => drag.onDragStart(i)}
-                    onDragEnter={() => {}}
                     onDragEnd={() => { drag.onDragEnd(); setDragOver(null); }}
                     onDragOver={(e: React.DragEvent) => {
                       e.preventDefault();
@@ -692,7 +691,7 @@ export default function ExerciseEditor() {
       {/* ── empty state after load ── */}
       {!loadingFrames && exerciseId && frames.length === 0 && (
         <Card className="flex flex-col items-center justify-center py-16 gap-3">
-          <Film className="h-8 w-8 text-muted-foreground/40" />
+          <Film className="h-8 w-8 text-muted-foreground opacity-40" />
           <p className="text-sm text-muted-foreground">Nenašli sa žiadne snímky.</p>
           <Button variant="outline" size="sm" onClick={() => loadFrames(exerciseId)}>
             Skúsiť znova
@@ -766,11 +765,9 @@ type FrameCardProps = {
   onDelete: () => void;
   inserting: boolean;
   deleting: boolean;
-  isDragOver: boolean;
   showStatus: (type: StatusType, text: string) => void;
   draggable: boolean;
   onDragStart: () => void;
-  onDragEnter: () => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
 };
@@ -786,7 +783,6 @@ function FrameCard({
   inserting,
   deleting,
   showStatus,
-  isDragOver,
   ...dragProps
 }: FrameCardProps) {
   // ── voice lines, saved on blur, after dictation and on voice change ──
@@ -796,6 +792,7 @@ function FrameCard({
   const [voiceSaved, setVoiceSaved] = useState(false);
   const [dictation, setDictation] = useState<"idle" | "recording" | "transcribing">("idle");
   const [naoSaying, setNaoSaying] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const savedVoiceText = useRef("");
   const recorder = useRef<MediaRecorder | null>(null);
   const voiceConfigUrl = `${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
@@ -908,7 +905,7 @@ function FrameCard({
 
   // shared by mobile and desktop layouts
   const frameMenu = (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
         <Button variant="ghost" size="icon-sm" aria-label="Možnosti snímky" disabled={inserting || deleting}>
           {inserting || deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
@@ -952,7 +949,7 @@ function FrameCard({
             onChange={(speed) => changeSpeech(speechLanguage, Number(speed))}
           />
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
-          <DropdownMenu.Item className={`${MENU_ITEM} text-destructive data-[highlighted]:text-destructive`} onSelect={onDelete}>
+          <DropdownMenu.Item className={`${MENU_ITEM} text-destructive data-[highlighted]:text-destructive`} onSelect={() => setConfirmDelete(true)}>
             <Trash2 className="h-4 w-4" />
             Odstrániť snímku
           </DropdownMenu.Item>
@@ -975,7 +972,7 @@ function FrameCard({
         <FrameImage frame={frame} exerciseId={exerciseId} className="w-14 h-14 shrink-0 object-cover" />
         <span className="text-sm font-medium text-foreground tabular-nums">{position + 1}</span>
         <div className="ml-auto flex items-center gap-1">
-          <GripVertical className="h-4 w-4 text-muted-foreground/40" />
+          <GripVertical className="h-4 w-4 text-muted-foreground opacity-40" />
           {frameMenu}
         </div>
       </div>
@@ -985,7 +982,7 @@ function FrameCard({
         {/* header */}
         <div className="flex items-center gap-1 pl-3 pr-1.5 pt-1.5 pb-1">
           <span className="text-sm font-medium text-foreground tabular-nums">{position + 1}</span>
-          <GripVertical className="h-4 w-4 ml-auto text-muted-foreground/40" />
+          <GripVertical className="h-4 w-4 ml-auto text-muted-foreground opacity-40" />
           {frameMenu}
         </div>
 
@@ -1033,6 +1030,15 @@ function FrameCard({
           </div>
         </div>
       </div>{/* end desktop card */}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Odstrániť snímku?"
+        description={`Snímka ${position + 1} sa natrvalo odstráni z cvičenia.`}
+        confirmLabel="Odstrániť"
+        onConfirm={onDelete}
+      />
     </div>
   );
 }
@@ -1048,7 +1054,7 @@ function FrameImage({ frame, exerciseId, className }: { frame: Frame; exerciseId
   if (failed >= sources.length) {
     return (
       <div className={`${className} rounded-lg bg-muted flex items-center justify-center`}>
-        <Film className="h-5 w-5 text-muted-foreground/40" />
+        <Film className="h-5 w-5 text-muted-foreground opacity-40" />
       </div>
     );
   }
