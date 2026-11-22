@@ -405,7 +405,7 @@ export default function ExerciseEditor() {
 
   // ── rename exercise ───────────────────────────────────────────
   const renameExercise = useCallback(async (name: string) => {
-    if (!exerciseId || !name.trim()) return;
+    if (!exerciseId || !name.trim()) return false;
     try {
       const res = await fetch(`${API_BASE}/exercise/${exerciseId}/config`, {
         method: "PUT",
@@ -414,8 +414,10 @@ export default function ExerciseEditor() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExerciseName(name.trim());
+      return true;
     } catch {
       showStatus("error", "Premenovanie zlyhalo.");
+      return false;
     }
   }, [exerciseId, showStatus]);
 

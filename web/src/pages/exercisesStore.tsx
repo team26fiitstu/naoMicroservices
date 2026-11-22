@@ -80,8 +80,10 @@ setDeleting(id);
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises((prev) => prev.map((e) => e.id === id ? { ...e, name } : e));
+      return true;
     } catch {
       showStatus("error", "Premenovanie zlyhalo.");
+      return false;
     }
   };
 

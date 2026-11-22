@@ -5,11 +5,12 @@ import { DEFAULT_EXERCISE_NAME, exerciseDisplayName } from "@/lib/exerciseName";
 
 type Props = {
   name: string;
-  onRename: (name: string) => void;
+  // resolves false when the name was not saved
+  onRename: (name: string) => Promise<boolean>;
   className?: string;
 };
 
-// Always-visible name field: Enter or blur saves, Escape or empty restores
+// Always-visible name field: Enter or blur saves, Escape, empty name or failed save restores
 export function ExerciseNameInput({ name, onRename, className }: Props) {
   const savedName = exerciseDisplayName(name);
   const [draft, setDraft] = useState(savedName);
@@ -28,11 +29,11 @@ export function ExerciseNameInput({ name, onRename, className }: Props) {
       placeholder={DEFAULT_EXERCISE_NAME}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
+      onBlur={async () => {
         const next = draft.trim();
-        if (!cancelled.current && next && next !== savedName) onRename(next);
-        else setDraft(savedName);
+        const cancel = cancelled.current;
         cancelled.current = false;
+        if (cancel || !next || next === savedName || !(await onRename(next))) setDraft(savedName);
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") cancelled.current = true;
