@@ -1,11 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
+import { Moon, Sun } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/navigation";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 
 export function SideNav() {
   const location = useLocation();
+  const { dark, toggle } = useDarkTheme();
 
   return (
-    <aside className="hidden md:flex flex-col w-56 min-h-screen border-r border-border bg-card px-3 py-6 gap-1 shrink-0">
+    <aside className="hidden md:flex flex-col w-56 sticky top-0 h-screen border-r border-border bg-card px-3 py-6 gap-1 shrink-0">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-4">
         NAO Cvičenia
       </p>
@@ -27,6 +30,13 @@ export function SideNav() {
           </Link>
         );
       })}
+      <button
+        onClick={toggle}
+        className="mt-auto flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {dark ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+        {dark ? "Svetlý režim" : "Tmavý režim"}
+      </button>
     </aside>
   );
 }

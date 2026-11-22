@@ -1,8 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
+import { Moon, Sun } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/navigation";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 
 export function BottomNav() {
   const location = useLocation();
+  const { dark, toggle } = useDarkTheme();
 
   return (
     <nav className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 w-[92%] rounded-3xl backdrop-blur-xl shadow-xl border border-border flex justify-around items-center py-3 z-50 bg-background/80">
@@ -14,6 +17,9 @@ export function BottomNav() {
           </Link>
         );
       })}
+      <button onClick={toggle} aria-label={dark ? "Svetlý režim" : "Tmavý režim"} className="flex flex-col items-center">
+        {dark ? <Sun className="w-7 h-7 text-muted-foreground" /> : <Moon className="w-7 h-7 text-muted-foreground" />}
+      </button>
     </nav>
   );
 }
