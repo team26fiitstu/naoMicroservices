@@ -64,7 +64,19 @@ class VideoRange(unittest.TestCase):
 
     def test_range_uses_real_frame_rate(self):
         self.assertEqual(processed_frames(start_seconds=2, end_seconds=4), [60, 90, 120])
-        self.assertEqual(processed_frames(fps=60, frames=600, start_seconds=2, end_seconds=4), [120, 150, 180, 210, 240])
+        self.assertEqual(processed_frames(fps=60, frames=600, start_seconds=2, end_seconds=4), [120, 180, 240])
+
+    def test_sampling_uses_source_frame_rate(self):
+        self.assertEqual(processed_frames(fps=25, frames=250), list(range(0, 250, 25)))
+        self.assertEqual(processed_frames(fps=29.97, frames=300), list(range(0, 300, 30)))
+        self.assertEqual(processed_frames(fps=60, frames=600, number_seconds_to_process=2), [0, 60, 120])
+
+    def test_rate_not_dividing_frame_rate(self):
+        self.assertEqual(processed_frames(number_frames_per_sec=4, end_seconds=0.99), [0, 8, 15, 23])
+
+    def test_rate_above_source_frame_rate_is_rejected(self):
+        with self.assertRaises(Exception):
+            processed_frames(fps=25, frames=250, number_frames_per_sec=30)
 
     def test_range_past_video_end_gives_no_frames(self):
         self.assertEqual(processed_frames(start_seconds=20), [])

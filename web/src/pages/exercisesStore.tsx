@@ -8,9 +8,8 @@ import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
+import { API_BASE } from "@/lib/api";
 import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen } from "lucide-react";
-
-const API = "";
 
 type Exercise = {
   id: string;
@@ -33,7 +32,7 @@ export default function ExercisesStore() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/exercise/list`);
+      const res = await fetch(`${API_BASE}/exercise/list`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises(await res.json());
     } catch {
@@ -48,7 +47,7 @@ export default function ExercisesStore() {
   const handleDelete = async (id: string) => {
 setDeleting(id);
     try {
-      const res = await fetch(`${API}/exercise/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
@@ -62,7 +61,7 @@ setDeleting(id);
   const handleRun = async (id: string) => {
     setRunning(id);
     try {
-      const res = await fetch(`${API}/exercise/${id}/run`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/exercise/${id}/run`, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch {
@@ -74,7 +73,7 @@ setDeleting(id);
 
   const renameExercise = async (id: string, name: string) => {
     try {
-      const res = await fetch(`${API}/exercise/${id}/config`, {
+      const res = await fetch(`${API_BASE}/exercise/${id}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),

@@ -24,6 +24,7 @@ import { MicButton } from "@/components/ui/micButton";
 import { AiBadge } from "@/components/ui/aiBadge";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
+import { API_BASE } from "@/lib/api";
 import {
   NO_VOICE_TEXT,
   hasVoiceText,
@@ -54,13 +55,6 @@ import {
   Flame
 } from "lucide-react";
 
-
-// ── API config ────────────────────────────────────────────────────
-const UPLOAD_API = "http://localhost:7000"; //empty for reverse proxy nginx
-const EDITOR_API = "http://localhost:7001";
-const POSES_API  = "http://localhost:8000";
-const ROBOT_API  = "http://localhost:5000";
-const TO_TEXT_API = "http://localhost:9901";
 
 // ── types ─────────────────────────────────────────────────────────
 type Frame = {
@@ -144,7 +138,7 @@ export default function ExerciseEditor() {
 
   // ── load poses on mount ───────────────────────────────────────
   useEffect(() => {
-    fetch(`${POSES_API}/commands`)
+    fetch(`${API_BASE}/commands`)
       .then((r) => r.json())
       .then((data) => {
         // Backend may return string[], { commands: string[] }, or a keyed object
@@ -202,7 +196,7 @@ export default function ExerciseEditor() {
       fd.append("max_frames", String(maxFrames));
       appendVideoRange(fd, range);
 
-      const res = await fetch(`${UPLOAD_API}/exercise/from_video`, {
+      const res = await fetch(`${API_BASE}/exercise/from_video`, {
         method: "POST",
         body: fd,
       });
@@ -225,7 +219,7 @@ export default function ExerciseEditor() {
   const loadFrames = useCallback(async (id: string): Promise<Frame[]> => {
     setLoadingFrames(true);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${id}/frames`);
+      const res = await fetch(`${API_BASE}/exercise/${id}/frames`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -265,7 +259,7 @@ export default function ExerciseEditor() {
       }
       setPoseFrameMap(freshPoseMap);
       // fetch exercise name + existing calorie/description estimates
-      fetch(`${EDITOR_API}/exercise/${id}`)
+      fetch(`${API_BASE}/exercise/${id}`)
         .then((r) => r.json())
         .then((cfg) => {
           if (cfg.name) setExerciseName(cfg.name);
@@ -328,7 +322,7 @@ export default function ExerciseEditor() {
       const desc = parsed.description?.trim();
       if (desc) {
         setDescription(desc);
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description: desc }),
@@ -349,7 +343,7 @@ export default function ExerciseEditor() {
     setInsertingAt(position);
     const oldIdxs = new Set(frames.map((f) => f.idx));
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/from_pose`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/from_pose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pose_name: poseName, position }),
@@ -375,7 +369,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setDeletingAt(frameIdx);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/${frameIdx}`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/${frameIdx}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -397,7 +391,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     try {
       const frame_sequence = (framesToSave ?? frames).map((f) => f.idx);
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/sequence`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/sequence`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ frame_sequence }),
@@ -413,7 +407,7 @@ export default function ExerciseEditor() {
   const renameExercise = useCallback(async (name: string) => {
     if (!exerciseId || !name.trim()) return;
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/config`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
@@ -470,7 +464,7 @@ export default function ExerciseEditor() {
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
         // persist to backend
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ calories: kcal }),
@@ -490,7 +484,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setRunning(true);
     try {
-      const res = await fetch(`${UPLOAD_API}/exercise/${exerciseId}/run`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/run`, {
         method: "POST",
         // No body — repetitions defaults to the value stored in the exercise config.
       });
@@ -804,7 +798,7 @@ function FrameCard({
   const storedVoiceConfig = useRef<VoiceLinesConfig>({});
   const savedVoiceText = useRef("");
   const recorder = useRef<MediaRecorder | null>(null);
-  const voiceConfigUrl = `${EDITOR_API}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
+  const voiceConfigUrl = `${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
 
   useEffect(() => {
     fetch(voiceConfigUrl)
@@ -873,7 +867,7 @@ function FrameCard({
       setDictation("transcribing");
       try {
         const audio = await blobToBase64(new Blob(chunks, { type: "audio/webm" }));
-        const res = await fetch(`${TO_TEXT_API}/translate/webm`, {
+        const res = await fetch(`${API_BASE}/translate/webm`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio_file: audio, model: "large-v1" }),
@@ -907,7 +901,7 @@ function FrameCard({
     }
     setNaoSaying(true);
     try {
-      const res = await fetch(`${ROBOT_API}/voiceLines/applyVoiceLine`, {
+      const res = await fetch(`${API_BASE}/voiceLines/applyVoiceLine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ voice_lines: { voice_lines_configs, lang: speechLanguage, speed: speechSpeed } }),
@@ -1054,8 +1048,8 @@ function FrameCard({
 // Frame photo, then pose image, then placeholder
 function FrameImage({ frame, exerciseId, className }: { frame: Frame; exerciseId: string; className: string }) {
   const sources = [
-    `${EDITOR_API}/exercise/${exerciseId}/frame/${frame.idx}/image`,
-    frame.pose_name ? `${POSES_API}/pose/${frame.pose_name}/image` : null,
+    `${API_BASE}/exercise/${exerciseId}/frame/${frame.idx}/image`,
+    frame.pose_name ? `${API_BASE}/pose/${frame.pose_name}/image` : null,
   ].filter((src): src is string => src !== null);
   const [failed, setFailed] = useState(0);
 

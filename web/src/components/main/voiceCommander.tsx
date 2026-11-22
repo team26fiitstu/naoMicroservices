@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
 import { MicButton } from "@/components/ui/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
+import { API_BASE } from "@/lib/api";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
 
@@ -142,7 +143,7 @@ export function VoiceCommander() {
       );
 
       try {
-        const res = await fetch(`/command`, {
+        const res = await fetch(`${API_BASE}/command`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ command: items[i].command }),
