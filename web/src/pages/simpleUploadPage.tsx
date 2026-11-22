@@ -1,51 +1,40 @@
-import { useState, useEffect } from "react";
-import { FileUpload } from "@/components/ui/file-upload";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, AlertCircle, CheckCircle, X } from "lucide-react";
+import { useState } from "react";
+import { FileDropzone } from "@/components/ui/fileDropzone";
+import { SelectedFileCard } from "@/components/ui/selectedFileCard";
+import { StatusAlert } from "@/components/ui/statusAlert";
+import { PageHeader } from "@/components/layout/pageHeader";
+import { useStatus } from "@/hooks/useStatus";
+import { failureText } from "@/lib/errors";
 import { VideoTrimmer } from "@/components/ui/videoTrimmer";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
+import { useSelectedFile } from "@/hooks/useSelectedFile";
 import { API_BASE } from "@/lib/api";
 
 
 export default function SimpleUploadPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { file, url: previewUrl, select, clear } = useSelectedFile();
   const [isUploading, setIsUploading] = useState(false);
   const [videoRange, setVideoRange] = useState<VideoRange | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<{ type: "success" | "error" | null; message: string }>({ type: null, message: "" });
+  const { status, show: showStatus, clear: clearStatus } = useStatus();
 
-  useEffect(() => {
-    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
-  }, [previewUrl]);
-
-  const handleFileUpload = (files: File[]) => {
-    if (!files.length) return;
-    const selected = files[0];
-    setFile(selected);
+  const selectFile = (selected: File) => {
+    select(selected);
     setVideoRange(null);
-    setUploadStatus({ type: null, message: "" });
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(selected));
+    clearStatus();
   };
 
   const clearFile = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setFile(null);
-    setPreviewUrl(null);
+    clear();
     setVideoRange(null);
-    setUploadStatus({ type: null, message: "" });
+    clearStatus();
   };
 
   const sendToBackend = async () => {
-    if (!file) { setUploadStatus({ type: "error", message: "Najprv vyberte súbor" }); return; }
+    if (!file) { showStatus("error", "Najprv vyberte súbor."); return; }
     setIsUploading(true);
-    setUploadStatus({ type: null, message: "" });
+    clearStatus();
     try {
       const isVideo = file.type.startsWith("video/");
-      const isImage = file.type.startsWith("image/");
-      if (!isVideo && !isImage) throw new Error("Nahrajte platný video alebo obrázkový súbor");
 
       const exerciseName = file.name.replace(/\.[^/.]+$/, "");
       const formData = new FormData();
@@ -61,23 +50,24 @@ export default function SimpleUploadPage() {
       }
 
       const url = isVideo ? `${API_BASE}/exercise/from_video` : `${API_BASE}/exercise/from_image`;
-      console.log(url);
       const response = await fetch(url, {
         method: "POST",
         body: formData,
       });
 
-      let responseData: any = null;
-      try { responseData = await response.json(); } catch {}
+      const responseData = await response.json().catch(() => null);
 
       if (!response.ok) {
         const details = [responseData?.detail, responseData?.error, responseData?.message].filter(Boolean);
-        throw new Error(`Chyba servera (${response.status}): ${details.join(" | ") || response.statusText}`);
+        throw new Error(`HTTP ${response.status}${details.length ? `, ${details.join(", ")}` : ""}`);
       }
 
-      setUploadStatus({ type: "success", message: `Cvičenie "${exerciseName}" bolo úspešne vytvorené!` });
+      // reset selection so the same file is not uploaded twice
+      clear();
+      setVideoRange(null);
+      showStatus("success", `Cvičenie „${exerciseName}“ bolo vytvorené.`);
     } catch (error) {
-      setUploadStatus({ type: "error", message: error instanceof Error ? error.message : "Nahranie súboru zlyhalo" });
+      showStatus("error", failureText("Nahranie zlyhalo", error));
     } finally {
       setIsUploading(false);
     }
@@ -86,47 +76,32 @@ export default function SimpleUploadPage() {
   const isVideo = file?.type.startsWith("video/");
 
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-6 pb-24 space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Jednoduché nahranie</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Nahrajte video alebo obrázok a odošlite ho do API robota.</p>
-      </div>
+    <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-4">
+      <PageHeader title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie." />
+      <StatusAlert status={status} />
 
-      <Card className="shadow-sm">
-        <FileUpload onChange={handleFileUpload} />
-
-        {file && previewUrl && (
-          <div className="px-4 pb-4 space-y-3">
-            <div className={isVideo ? "relative" : "relative bg-gray-100 rounded-lg overflow-hidden"}>
-              <button onClick={clearFile} className="absolute top-2 right-2 z-10 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-              {isVideo
-                ? <VideoTrimmer key={previewUrl} src={previewUrl} onChange={setVideoRange} />
-                : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain" />
-              }
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB · {isVideo ? "Video" : "Obrázok"}
-            </p>
-            {/* video waits for its range, otherwise the whole video would be processed */}
-            <Button onClick={sendToBackend} disabled={isUploading || (isVideo && !videoRange)} className="w-full text-white">
-              {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Nahrávanie…</> : "Odoslať do API"}
-            </Button>
-          </div>
-        )}
-
-        {uploadStatus.type && (
-          <div className="px-4 pb-4">
-            <Alert variant={uploadStatus.type === "error" ? "destructive" : "default"}
-              className={uploadStatus.type === "success" ? "border-green-500 bg-green-50" : ""}>
-              {uploadStatus.type === "error" ? <AlertCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4 text-green-600" />}
-              <AlertTitle>{uploadStatus.type === "error" ? "Chyba" : "Úspech"}</AlertTitle>
-              <AlertDescription className="break-words">{uploadStatus.message}</AlertDescription>
-            </Alert>
-          </div>
-        )}
-      </Card>
+      {!file || !previewUrl ? (
+        <FileDropzone
+          onFile={selectFile}
+          onReject={() => showStatus("error", "Vyberte video alebo obrázok.")}
+          accept="video/*,image/*"
+          formats="MP4, MOV, AVI, WEBM, JPG, PNG"
+        />
+      ) : (
+        <SelectedFileCard
+          file={file}
+          onClear={clearFile}
+          onSubmit={sendToBackend}
+          submitLabel={isUploading ? "Nahrávanie…" : "Odoslať do API"}
+          submitting={isUploading}
+          // video waits for its range, otherwise the whole video would be processed
+          submitDisabled={isVideo && !videoRange}
+        >
+          {isVideo
+            ? <VideoTrimmer key={previewUrl} src={previewUrl} onChange={setVideoRange} />
+            : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain rounded-lg bg-muted" />}
+        </SelectedFileCard>
+      )}
     </div>
   );
 }

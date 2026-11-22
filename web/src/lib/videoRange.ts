@@ -1,6 +1,9 @@
 // Video part chosen for processing, in seconds
 export type VideoRange = { start: number; end: number; duration: number };
 
+// Range unknown, e.g. browser cannot play the video, whole video is processed
+export const WHOLE_VIDEO: VideoRange = { start: 0, end: 0, duration: 0 };
+
 export const isTrimmed = (range: VideoRange | null): range is VideoRange =>
   range !== null && (range.start > 0 || range.end < range.duration);
 

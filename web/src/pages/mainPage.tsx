@@ -1,32 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Upload, Mic, Library, FilmIcon } from "lucide-react";
-
-const features = [
-  {
-    icon: Upload,
-    title: "Jednoduché nahranie",
-    description: "Nahrajte video alebo obrázok a odošlite ho priamo do API robota NAO na okamžité vykonanie pózy.",
-    path: "/upload",
-  },
-  {
-    icon: Mic,
-    title: "Hlasové príkazy",
-    description: "Ovládajte robota NAO hlasom. Povedzte názov pózy a robot ju okamžite vykoná.",
-    path: "/voice",
-  },
-  {
-    icon: FilmIcon,
-    title: "Editor cvičení",
-    description: "Nahrajte video pre extrakciu snímok, zoraďte ich, vložte pomenované pózy a spustite celú sekvenciu na robotovi.",
-    path: "/edit",
-  },
-  {
-    icon: Library,
-    title: "Cvičenia",
-    description: "Prehliadajte, premenúvajte, mažte a spúšťajte uložené cvičenia. Odhad kalórií generuje AI automaticky.",
-    path: "/exercises",
-  },
-];
+import { NAV_ITEMS } from "@/lib/navigation";
 
 export default function MainPage() {
   const navigate = useNavigate();
@@ -43,7 +16,7 @@ export default function MainPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {features.map(({ icon: Icon, title, description, path }) => (
+        {NAV_ITEMS.filter((item) => item.description).map(({ icon: Icon, label, description, path }) => (
           <button
             key={path}
             onClick={() => navigate(path)}
@@ -53,7 +26,7 @@ export default function MainPage() {
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Icon className="h-4 w-4 text-primary" />
               </div>
-              <span className="text-sm font-medium text-foreground">{title}</span>
+              <span className="text-sm font-medium text-foreground">{label}</span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
           </button>
