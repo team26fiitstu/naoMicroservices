@@ -157,10 +157,6 @@ export default function ExerciseEditor() {
 
   // ── select video ──────────────────────────────────────────────
   const selectVideo = (file: File) => {
-    if (!file.type.startsWith("video/")) {
-      showStatus("error", "Prosím vyberte video súbor.");
-      return;
-    }
     clearStatus();
     setVideoRange(null);
     pending.select(file);
@@ -589,6 +585,7 @@ export default function ExerciseEditor() {
       {!exerciseId && !pending.file && (
         <FileDropzone
           onFile={selectVideo}
+          onReject={() => showStatus("error", "Prosím vyberte video súbor.")}
           accept="video/*"
           formats="MP4, MOV, AVI, WEBM"
         />
@@ -844,6 +841,10 @@ function FrameCard({
       recorder.current?.stop();
       return;
     }
+    if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported("audio/webm")) {
+      showStatus("error", "Diktovanie nie je v tomto prehliadači podporované. Použite Chrome alebo Edge.");
+      return;
+    }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -870,6 +871,8 @@ function FrameCard({
           const text = voiceText.trim() ? `${voiceText.trim()} ${translation}` : translation;
           setVoiceText(text);
           saveVoice(text);
+        } else {
+          showStatus("info", "Nič sa nerozpoznalo.");
         }
       } catch (err) {
         showStatus("error", failureText("Prepis reči zlyhal", err));

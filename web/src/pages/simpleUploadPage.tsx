@@ -35,8 +35,6 @@ export default function SimpleUploadPage() {
     clearStatus();
     try {
       const isVideo = file.type.startsWith("video/");
-      const isImage = file.type.startsWith("image/");
-      if (!isVideo && !isImage) throw new Error("Nahrajte platný video alebo obrázkový súbor");
 
       const exerciseName = file.name.replace(/\.[^/.]+$/, "");
       const formData = new FormData();
@@ -64,6 +62,9 @@ export default function SimpleUploadPage() {
         throw new Error(`HTTP ${response.status}${details.length ? `, ${details.join(", ")}` : ""}`);
       }
 
+      // reset selection so the same file is not uploaded twice
+      clear();
+      setVideoRange(null);
       showStatus("success", `Cvičenie „${exerciseName}“ bolo vytvorené.`);
     } catch (error) {
       showStatus("error", failureText("Nahranie zlyhalo", error));
@@ -82,6 +83,7 @@ export default function SimpleUploadPage() {
       {!file || !previewUrl ? (
         <FileDropzone
           onFile={selectFile}
+          onReject={() => showStatus("error", "Vyberte video alebo obrázok.")}
           accept="video/*,image/*"
           formats="MP4, MOV, AVI, WEBM, JPG, PNG"
         />

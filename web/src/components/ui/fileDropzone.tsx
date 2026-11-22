@@ -6,14 +6,25 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   onFile: (file: File) => void;
+  onReject: () => void;
   accept: string;
   formats: string;
 };
 
+// "video/*,image/*" style check; drag and drop bypasses the input accept filter
+const accepts = (file: File, accept: string) =>
+  accept.split(",").some((type) => (type.endsWith("/*") ? file.type.startsWith(type.slice(0, -1)) : file.type === type));
+
 // Drop or click to pick file
-export function FileDropzone({ onFile, accept, formats }: Props) {
+export function FileDropzone({ onFile, onReject, accept, formats }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+
+  const pick = (file?: File) => {
+    if (!file) return;
+    if (accepts(file, accept)) onFile(file);
+    else onReject();
+  };
 
   return (
     <Card
@@ -28,8 +39,7 @@ export function FileDropzone({ onFile, accept, formats }: Props) {
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
-        const file = e.dataTransfer.files[0];
-        if (file) onFile(file);
+        pick(e.dataTransfer.files[0]);
       }}
     >
       <div className="flex flex-col items-center justify-center gap-3 py-14 px-8 text-center">
@@ -46,8 +56,7 @@ export function FileDropzone({ onFile, accept, formats }: Props) {
         accept={accept}
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          pick(e.target.files?.[0]);
           e.target.value = "";
         }}
       />
