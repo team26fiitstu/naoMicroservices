@@ -794,8 +794,6 @@ function FrameCard({
   const [voiceSaved, setVoiceSaved] = useState(false);
   const [dictation, setDictation] = useState<"idle" | "recording" | "transcribing">("idle");
   const [naoSaying, setNaoSaying] = useState(false);
-  // server config, keeps fields card does not edit
-  const storedVoiceConfig = useRef<VoiceLinesConfig>({});
   const savedVoiceText = useRef("");
   const recorder = useRef<MediaRecorder | null>(null);
   const voiceConfigUrl = `${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
@@ -804,7 +802,6 @@ function FrameCard({
     fetch(voiceConfigUrl)
       .then((res) => (res.ok ? res.json() : {}))
       .then((config: VoiceLinesConfig) => {
-        storedVoiceConfig.current = config;
         const text = voiceTextFromConfig(config);
         savedVoiceText.current = text;
         setVoiceText(text);
@@ -817,13 +814,9 @@ function FrameCard({
   // release microphone when card unmounts mid-recording
   useEffect(() => () => recorder.current?.stream.getTracks().forEach((track) => track.stop()), []);
 
+  // field is the only source: saving drops older recorded lines, so a cleared field means silence
   const saveVoice = async (text: string, lang = speechLanguage, speed = speechSpeed) => {
-    const config: VoiceLinesConfig = {
-      ...storedVoiceConfig.current,
-      extractedText: hasVoiceText(text) ? text : NO_VOICE_TEXT,
-      lang,
-      speed,
-    };
+    const config: VoiceLinesConfig = { extractedText: hasVoiceText(text) ? text : NO_VOICE_TEXT, lang, speed };
     try {
       const res = await fetch(voiceConfigUrl, {
         method: "POST",
@@ -831,7 +824,6 @@ function FrameCard({
         body: JSON.stringify({ voice_lines: config }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      storedVoiceConfig.current = config;
       savedVoiceText.current = text;
       setVoiceSaved(true);
       setTimeout(() => setVoiceSaved(false), 2000);
@@ -892,13 +884,11 @@ function FrameCard({
 
   // robot says text now, nothing saved
   const sayOnRobot = async () => {
-    const voice_lines_configs = hasVoiceText(voiceText)
-      ? { entire: { translation: voiceText } }
-      : storedVoiceConfig.current.voice_lines_configs;
-    if (!voice_lines_configs || Object.keys(voice_lines_configs).length === 0) {
+    if (!hasVoiceText(voiceText)) {
       showStatus("info", "Najprv napíšte, čo má robot povedať.");
       return;
     }
+    const voice_lines_configs = { entire: { translation: voiceText } };
     setNaoSaying(true);
     try {
       const res = await fetch(`${API_BASE}/voiceLines/applyVoiceLine`, {
