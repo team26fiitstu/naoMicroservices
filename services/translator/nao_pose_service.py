@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 # Load only the repository root file; container environment takes precedence.
 load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
 
+import math
 import uuid
 import json
 
@@ -417,6 +418,22 @@ def exercise_run(exercise_id):
     }), 200
 
 
+def parse_time_range(form):
+    """Optional start/end form fields in seconds, end -1 means until end."""
+    try:
+        start = float(form.get("start", "0") or 0)
+        end = float(form.get("end", "-1") or -1)
+    except ValueError:
+        raise ValueError("start and end must be numbers (seconds)") from None
+    if not math.isfinite(start) or not math.isfinite(end):
+        raise ValueError("start and end must be finite numbers")
+    if start < 0:
+        raise ValueError("start must not be negative")
+    if end != -1 and end <= start:
+        raise ValueError("end must be greater than start")
+    return start, end
+
+
 @app.route("/exercise/from_video", methods=["POST"])
 def exercise_from_video():
     """
@@ -427,6 +444,8 @@ def exercise_from_video():
         name:    string (default "Unnamed Exercise")
         fps:     int    (default 1)
         seconds: int    (default -1, full video)
+        start:   float  (default 0, range start in seconds)
+        end:     float  (default -1, range end, -1 = until end)
 
     Response:
         201 JSON: exercise config + frame_count
@@ -448,6 +467,11 @@ def exercise_from_video():
         return jsonify({"error": "fps, seconds, and max_frames must be integers"}), 400
 
     try:
+        start_seconds, end_seconds = parse_time_range(request.form)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
         video_bytes = file.read()
     except Exception as e:
         return jsonify({"error": "failed to read video", "detail": str(e)}), 500
@@ -464,6 +488,8 @@ def exercise_from_video():
             number_frames_per_sec=fps,
             number_seconds_to_process=seconds,
             attach_visualization=True,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
         )
     except requests.RequestException as e:
         return jsonify({"error": "failed to call skeletonfinderapi", "detail": str(e)}), 502
