@@ -21,3 +21,4 @@ skeletonFinderAPI/.idea/*
 
 /choregraphe/choregraphe-2.8.8-ubuntu2204/*
 /choregraphe/choregraphe-2.8.8-ubuntu2204-standalone.tar.gz
+*.pyc
