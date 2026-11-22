@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { isTrimmed, type VideoRange } from "@/lib/videoRange";
+import { isTrimmed, WHOLE_VIDEO, type VideoRange } from "@/lib/videoRange";
 
 type Props = {
   src: string;
@@ -25,6 +25,7 @@ export function VideoTrimmer({ src, onChange }: Props) {
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
   const [current, setCurrent] = useState(0);
+  const [unavailable, setUnavailable] = useState(false);
 
   const select = (nextStart: number, nextEnd: number, total = duration) => {
     setStart(nextStart);
@@ -37,9 +38,15 @@ export function VideoTrimmer({ src, onChange }: Props) {
     setCurrent(time);
   };
 
+  // server can still decode videos the browser cannot play
+  const markUnavailable = () => {
+    setUnavailable(true);
+    onChange(WHOLE_VIDEO);
+  };
+
   const onLoadedMetadata = () => {
     const total = videoRef.current?.duration ?? 0;
-    if (!Number.isFinite(total) || total <= 0) return;
+    if (!Number.isFinite(total) || total <= 0) return markUnavailable();
     setDuration(total);
     select(0, total, total);
   };
@@ -86,8 +93,15 @@ export function VideoTrimmer({ src, onChange }: Props) {
         onLoadedMetadata={onLoadedMetadata}
         onTimeUpdate={onTimeUpdate}
         onPlay={onPlay}
-        className="w-full max-h-80 object-contain bg-black rounded-lg"
+        onError={markUnavailable}
+        className={unavailable ? "hidden" : "w-full max-h-80 object-contain bg-black rounded-lg"}
       />
+
+      {unavailable && (
+        <p className="rounded-lg bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+          Video sa nedá prehrať v prehliadači, spracuje sa celé.
+        </p>
+      )}
 
       {duration > 0 && (
         <>

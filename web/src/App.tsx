@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import MainPage from "./pages/mainPage";
 import ExercisePage from "./pages/exercisePage";
 import VideoEditor from "./pages/videoEditor";
@@ -24,6 +24,7 @@ function App() {
           <Route path="/group" element={<GroupPage />} />
           <Route path="/edit" element={<VideoEditor />} />
           <Route path="/record" element={<AudioRecorderAggregatorPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
       <BottomNav />

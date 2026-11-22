@@ -1,27 +1,25 @@
-import { Home, Upload, Mic, Library, FilmIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-
-const items = [
-  { path: "/", icon: Home },
-  { path: "/upload", icon: Upload },
-  { path: "/voice", icon: Mic },
-  { path: "/exercises", icon: Library },
-  { path: "/edit", icon: FilmIcon },
-];
+import { Moon, Sun } from "lucide-react";
+import { NAV_ITEMS } from "@/lib/navigation";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 
 export function BottomNav() {
   const location = useLocation();
+  const { dark, toggle } = useDarkTheme();
 
   return (
-    <nav className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 w-[92%] rounded-3xl backdrop-blur-xl shadow-gray-400 shadow-xl border border-gray-300 flex justify-around items-center py-3 z-50 bg-background/80">
-      {items.map(({ path, icon: Icon }) => {
+    <nav className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 w-[92%] rounded-3xl backdrop-blur-xl shadow-xl border border-border flex justify-around items-center py-3 z-50 bg-background/80">
+      {NAV_ITEMS.map(({ path, icon: Icon, label }) => {
         const active = location.pathname === path;
         return (
-          <Link key={path} to={path} className="flex flex-col items-center">
-            <Icon className={`w-7 h-7 transition-all ${active ? "text-blue-600 scale-110" : "text-gray-600"}`} />
+          <Link key={path} to={path} aria-label={label} className="flex flex-col items-center">
+            <Icon className={`w-7 h-7 transition-all ${active ? "text-primary scale-110" : "text-muted-foreground"}`} />
           </Link>
         );
       })}
+      <button onClick={toggle} aria-label={dark ? "Svetlý režim" : "Tmavý režim"} className="flex flex-col items-center">
+        {dark ? <Sun className="w-7 h-7 text-muted-foreground" /> : <Moon className="w-7 h-7 text-muted-foreground" />}
+      </button>
     </nav>
   );
 }
