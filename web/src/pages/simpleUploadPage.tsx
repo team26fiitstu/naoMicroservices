@@ -6,8 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle, X } from "lucide-react";
 import { VideoTrimmer } from "@/components/ui/videoTrimmer";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
+import { API_BASE } from "@/lib/api";
 
-const API_BASE_URL = "http://127.0.0.1:7000"; //(process.env.HOST_DOCKER_INTERNAL as string) + ":7000";
 
 export default function SimpleUploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -60,7 +60,7 @@ export default function SimpleUploadPage() {
         formData.append("name", exerciseName);
       }
 
-      const url = isVideo ? `${API_BASE_URL}/exercise/from_video` : `${API_BASE_URL}/exercise/from_image`;
+      const url = isVideo ? `${API_BASE}/exercise/from_video` : `${API_BASE}/exercise/from_image`;
       console.log(url);
       const response = await fetch(url, {
         method: "POST",

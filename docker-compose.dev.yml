@@ -10,6 +10,9 @@ services:
     depends_on:
       - translatorapi
       - audio-to-text-converter
+      - naorobotapi
+      - voicecommandapi
+      - exercise-config-service
 
   naorobotapi:
     # Bundled NAOqi Python 2 native libraries are x86-64 only.

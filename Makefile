@@ -150,6 +150,7 @@ k8s-apply: ## Apply k8s manifests without pushing (use local images)
 	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/voicecommandapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/exercise-config-service-deployment --timeout=120s 2>/dev/null || true
+	@kubectl wait --for=condition=available deployment/audio-to-text-converter-deployment --timeout=120s 2>/dev/null || true
 	@echo "k8s apply done"
 
 k8s-deploy: push-all ## Push images and deploy all services to Kubernetes
@@ -161,6 +162,7 @@ k8s-deploy: push-all ## Push images and deploy all services to Kubernetes
 	@kubectl wait --for=condition=available deployment/translator-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/voicecommandapi-deployment --timeout=120s 2>/dev/null || true
 	@kubectl wait --for=condition=available deployment/exercise-config-service-deployment --timeout=120s 2>/dev/null || true
+	@kubectl wait --for=condition=available deployment/audio-to-text-converter-deployment --timeout=120s 2>/dev/null || true
 	@echo "k8s deploy done"
 
 k8s-delete: ## Delete all Kubernetes resources
@@ -179,6 +181,7 @@ k8s-logs: ## Print logs from all Kubernetes pods
 	@kubectl logs -l app=translator --tail=100 || true
 	@kubectl logs -l app=voicecommandapi --tail=100 || true
 	@kubectl logs -l app=exercise-config-service --tail=100 || true
+	@kubectl logs -l app=audio-to-text-converter --tail=100 || true
 
 k8s-status: ## Show status of all Kubernetes pods/services
 	@kubectl get nodes || true
@@ -194,3 +197,4 @@ k8s-restart: ## Restart all Kubernetes deployments
 	@kubectl rollout restart deployment translator-deployment || true
 	@kubectl rollout restart deployment voicecommandapi-deployment || true
 	@kubectl rollout restart deployment exercise-config-service-deployment || true
+	@kubectl rollout restart deployment audio-to-text-converter-deployment || true
