@@ -21,6 +21,7 @@ from app.storage import (
     save_frame_image,
     get_frame_image,
 )
+from app.choreography import choreographies_using
 from runtime_config import service_host
 from http_retry import request_with_retries
 
@@ -114,6 +115,14 @@ def get(exercise_id):
 def delete(exercise_id):
     if not exercise_exists(exercise_id):
         return jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404
+
+    used_by = choreographies_using(exercise_id)
+    if used_by:
+        return jsonify({
+            "error": f"Exercise '{exercise_id}' is used in one or more choreographies and cannot be deleted",
+            "choreographies": used_by,
+        }), 409
+
     delete_exercise(exercise_id)
     return jsonify({"deleted": exercise_id}), 200
 
