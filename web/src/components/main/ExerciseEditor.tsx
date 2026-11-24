@@ -3,51 +3,60 @@ import { useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "radix-ui";
-import { AudioRecorderComponent } from "@/components/ui/audioRecorder";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect } from "@/components/ui/native-select";
+import { DropdownMenu } from "radix-ui";
+import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { FileDropzone } from "@/components/ui/fileDropzone";
+import { SelectedFileCard } from "@/components/ui/selectedFileCard";
+import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
+import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
+import { useSelectedFile } from "@/hooks/useSelectedFile";
+import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
+import { useStatus, type StatusType } from "@/hooks/useStatus";
+import { StatusAlert } from "@/components/ui/statusAlert";
+import { PageHeader } from "@/components/layout/pageHeader";
+import { poseLabel, findPoses } from "@/lib/poses";
+import { wordPattern } from "@/lib/text";
+import { pluralSk } from "@/lib/plural";
+import { failureText } from "@/lib/errors";
+import { MicButton } from "@/components/ui/micButton";
+import { AiBadge } from "@/components/ui/aiBadge";
+import { TranscriptBlock } from "@/components/ui/transcriptBlock";
+import { ConfirmDialog } from "@/components/ui/confirmDialog";
+import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
+import { API_BASE } from "@/lib/api";
+import {
+  NO_VOICE_TEXT,
+  hasVoiceText,
+  voiceTextFromConfig,
+  blobToBase64,
+  SPEECH_LANGUAGES,
+  SPEECH_SPEEDS,
+  DEFAULT_SPEECH_LANGUAGE,
+  DEFAULT_SPEECH_SPEED,
+  type VoiceLinesConfig,
+} from "@/lib/voiceLines";
 import {
   Loader2,
   Upload,
   Play,
   Trash2,
   GripVertical,
-  AlertCircle,
-  CheckCircle,
   Film,
   ChevronLeft,
   ChevronRight,
   Mic,
-  MicOff,
   X,
-  Pencil,
-  Save
+  MoreHorizontal,
+  Square,
+  Check,
+  Languages,
+  Gauge,
+  Flame
 } from "lucide-react";
 
-import "@/components/styles/toggle.css";
-
-// ── pose display names (Slovak) ───────────────────────────────────
-const POSE_DISPLAY_SK: Record<string, string> = {
-  wave:        "Zamávaj",
-  stand:       "Stoj",
-  sit:         "Sed",
-  hands_up:    "Ruky hore",
-  t_pose:      "T-Póza",
-  bow:         "Úklon",
-  crouch:      "Drep",
-  point_right: "Ukáž vpravo",
-  point_left:  "Ukáž vľavo",
-};
-
-// ── API config ────────────────────────────────────────────────────
-const UPLOAD_API = "http://localhost:7000"; //empty for reverse proxy nginx
-const EDITOR_API = "http://localhost:7001";
-const POSES_API  = "http://localhost:8000";
-const ROBOT_API  = "http://localhost:5000";
-const LLM_API_BASE = import.meta.env.VITE_LLM_API_BASE ?? "https://litellm.blockfinlab.xyz";
-const LLM_API_KEY  = import.meta.env.VITE_LLM_API_KEY ?? "";
-const LLM_MODEL    = "gpt-5.4-fiit";
-const LLM_AVAILABLE = !!LLM_API_KEY;
 
 // ── types ─────────────────────────────────────────────────────────
 type Frame = {
@@ -62,7 +71,6 @@ type PoseCommand = {
   name: string;
 };
 
-type StatusMsg = { type: "success" | "error" | "info"; text: string } | null;
 
 // ── drag-reorder hook ─────────────────────────────────────────────
 function useDragReorder<T>(
@@ -100,10 +108,13 @@ export default function ExerciseEditor() {
   const [exerciseId, setExerciseId]   = useState<string | null>(searchParams.get("id"));
   const [frames, setFrames]           = useState<Frame[]>([]);
   const [poses, setPoses]             = useState<PoseCommand[]>([]);
-  const [status, setStatus]           = useState<StatusMsg>(null);
+  const { status, show: showStatus, clear: clearStatus } = useStatus();
   const [uploading, setUploading]     = useState(false);
   const [fps, setFps]                 = useState(1);
   const [maxFrames, setMaxFrames]     = useState(8);
+  // video waiting for range choice before upload
+  const pending = useSelectedFile();
+  const [videoRange, setVideoRange]   = useState<VideoRange | null>(null);
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [running, setRunning]         = useState(false);
   const [insertingAt, setInsertingAt] = useState<number | null>(null);
@@ -115,12 +126,9 @@ export default function ExerciseEditor() {
   const [caloriesLoading, setCaloriesLoading] = useState(false);
   const [description, setDescription]   = useState<string | null>(null);
   const [descLoading, setDescLoading]   = useState(false);
-  const [editingName, setEditingName]   = useState(false);
-  const [openVoiceLines, setOpenVoiceLines] = useState<number | null>(null)
   // maps frame idx → pose name for frames inserted from pose registry
   const [poseFrameMap, setPoseFrameMap] = useState<Record<number, string>>({});
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const drag = useDragReorder(frames, setFrames, (newFrames) => saveSequence(newFrames));
 
   // ── auto-load if ?id= param present ──────────────────────────
@@ -132,7 +140,7 @@ export default function ExerciseEditor() {
 
   // ── load poses on mount ───────────────────────────────────────
   useEffect(() => {
-    fetch(`${POSES_API}/commands`)
+    fetch(`${API_BASE}/commands`)
       .then((r) => r.json())
       .then((data) => {
         // Backend may return string[], { commands: string[] }, or a keyed object
@@ -146,21 +154,36 @@ export default function ExerciseEditor() {
       .catch(() => {/* poses not critical at startup */});
   }, []);
 
-  const showStatus = (type: "success" | "error" | "info", text: string) => {
-    setStatus({ type, text });
-    if (type !== "error") setTimeout(() => setStatus(null), 4000);
+
+  // ── select video ──────────────────────────────────────────────
+  const selectVideo = (file: File) => {
+    clearStatus();
+    setVideoRange(null);
+    pending.select(file);
+  };
+
+  const clearPendingVideo = () => {
+    pending.clear();
+    setVideoRange(null);
+  };
+
+  // back to upload zone for new video
+  const resetEditor = () => {
+    clearPendingVideo();
+    setExerciseId(null);
+    setFrames([]);
+    clearStatus();
+    setExerciseName("");
+    setCalories(null);
+    setDescription(null);
   };
 
   // ── upload video ──────────────────────────────────────────────
-  // POST /exercise/from_video  (multipart, field "video")
+  // POST /exercise/from_video  (multipart, field "video", optional "start"/"end" in seconds)
   // Returns the saved exercise config — extract id from it.
-  const handleUpload = useCallback(async (file: File) => {
-    if (!file.type.startsWith("video/")) {
-      showStatus("error", "Prosím vyberte video súbor.");
-      return;
-    }
+  const handleUpload = useCallback(async (file: File, range: VideoRange | null) => {
     setUploading(true);
-    setStatus(null);
+    clearStatus();
     setFrames([]);
     setExerciseId(null);
 
@@ -169,31 +192,32 @@ export default function ExerciseEditor() {
       fd.append("video", file);
       fd.append("fps", String(fps));
       fd.append("max_frames", String(maxFrames));
+      appendVideoRange(fd, range);
 
-      const res = await fetch(`${UPLOAD_API}/exercise/from_video`, {
+      const res = await fetch(`${API_BASE}/exercise/from_video`, {
         method: "POST",
         body: fd,
       });
-      if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const id = data.id ?? data.exercise_id ?? data.exerciseId ?? String(data);
       setExerciseId(id);
       showStatus("info", `Cvičenie vytvorené. Načítavam snímky…`);
       await loadFrames(id);
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Nahranie zlyhalo");
+      showStatus("error", failureText("Nahranie zlyhalo", err));
     } finally {
       setUploading(false);
     }
-  }, [fps, maxFrames]);
+  }, [fps, maxFrames, showStatus, clearStatus]);
 
   // ── load frames ───────────────────────────────────────────────
   // GET /exercise/<id>/frames  → plain array of frame objects
   // Each frame has: index (int), keypoints, nao_angles, joint_values
-  const loadFrames = useCallback(async (id: string): Promise<Frame[]> => {
+  const loadFrames = useCallback(async (id: string, quiet = false): Promise<Frame[]> => {
     setLoadingFrames(true);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${id}/frames`);
+      const res = await fetch(`${API_BASE}/exercise/${id}/frames`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -233,7 +257,7 @@ export default function ExerciseEditor() {
       }
       setPoseFrameMap(freshPoseMap);
       // fetch exercise name + existing calorie/description estimates
-      fetch(`${EDITOR_API}/exercise/${id}`)
+      fetch(`${API_BASE}/exercise/${id}`)
         .then((r) => r.json())
         .then((cfg) => {
           if (cfg.name) setExerciseName(cfg.name);
@@ -243,15 +267,15 @@ export default function ExerciseEditor() {
           else generateDescription(id, normalised);
         })
         .catch(() => {});
-      showStatus("success", `Načítaných ${normalised.length} snímok.`);
+      if (!quiet) showStatus("success", `${pluralSk(normalised.length, "Načítaná", "Načítané", "Načítaných")} ${normalised.length} ${pluralSk(normalised.length, "snímka", "snímky", "snímok")}.`);
       return normalised;
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Načítanie snímok zlyhalo");
+      showStatus("error", failureText("Načítanie snímok zlyhalo", err));
       return [];
     } finally {
       setLoadingFrames(false);
     }
-  }, []);
+  }, [showStatus]);
 
   // ── description generation via GPT ───────────────────────────
   const generateDescription = useCallback(async (id: string, frameList: Frame[]) => {
@@ -296,7 +320,7 @@ export default function ExerciseEditor() {
       const desc = parsed.description?.trim();
       if (desc) {
         setDescription(desc);
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description: desc }),
@@ -317,25 +341,25 @@ export default function ExerciseEditor() {
     setInsertingAt(position);
     const oldIdxs = new Set(frames.map((f) => f.idx));
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/from_pose`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/from_pose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pose_name: poseName, position }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const newFrames = await loadFrames(exerciseId);
+      const newFrames = await loadFrames(exerciseId, true);
       const newFrame = newFrames.find((f) => !oldIdxs.has(f.idx));
       if (newFrame) {
         setPoseFrameMap((prev) => ({ ...prev, [newFrame.idx]: poseName }));
       }
       generateDescription(exerciseId, newFrames);
-      showStatus("success", `Póza "${poseName}" vložená.`);
+      showStatus("success", `Póza „${poseLabel(poseName)}“ vložená.`);
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Vloženie zlyhalo");
+      showStatus("error", failureText("Vloženie zlyhalo", err));
     } finally {
       setInsertingAt(null);
     }
-  }, [exerciseId, frames, loadFrames, generateDescription]);
+  }, [exerciseId, frames, loadFrames, generateDescription, showStatus]);
 
   // ── delete frame ──────────────────────────────────────────────
   // DELETE /exercise/<id>/frame/<idx>
@@ -343,7 +367,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setDeletingAt(frameIdx);
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/frame/${frameIdx}`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/${frameIdx}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -352,11 +376,11 @@ export default function ExerciseEditor() {
       generateDescription(exerciseId, remaining);
       showStatus("success", "Snímka odstránená.");
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Odstránenie zlyhalo");
+      showStatus("error", failureText("Odstránenie zlyhalo", err));
     } finally {
       setDeletingAt(null);
     }
-  }, [exerciseId, frames, generateDescription]);
+  }, [exerciseId, frames, generateDescription, showStatus]);
 
   // ── save sequence ─────────────────────────────────────────────
   // PUT /exercise/<id>/sequence
@@ -365,7 +389,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     try {
       const frame_sequence = (framesToSave ?? frames).map((f) => f.idx);
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/sequence`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/sequence`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ frame_sequence }),
@@ -373,25 +397,27 @@ export default function ExerciseEditor() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showStatus("success", "Poradie uložené.");
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Uloženie zlyhalo");
+      showStatus("error", failureText("Uloženie zlyhalo", err));
     }
-  }, [exerciseId, frames]);
+  }, [exerciseId, frames, showStatus]);
 
   // ── rename exercise ───────────────────────────────────────────
   const renameExercise = useCallback(async (name: string) => {
-    if (!exerciseId || !name.trim()) return;
+    if (!exerciseId || !name.trim()) return false;
     try {
-      const res = await fetch(`${EDITOR_API}/exercise/${exerciseId}/config`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setExerciseName(name.trim());
+      return true;
     } catch {
       showStatus("error", "Premenovanie zlyhalo.");
+      return false;
     }
-  }, [exerciseId]);
+  }, [exerciseId, showStatus]);
 
   // ── calorie estimation via GPT ────────────────────────────────
   const estimateCalories = useCallback(async (id: string, frameList: Frame[]) => {
@@ -438,7 +464,7 @@ export default function ExerciseEditor() {
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
         // persist to backend
-        await fetch(`${EDITOR_API}/exercise/${id}/config`, {
+        await fetch(`${API_BASE}/exercise/${id}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ calories: kcal }),
@@ -458,83 +484,50 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setRunning(true);
     try {
-      const res = await fetch(`${UPLOAD_API}/exercise/${exerciseId}/run`, {
+      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/run`, {
         method: "POST",
         // No body — repetitions defaults to the value stored in the exercise config.
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Spustenie zlyhalo");
+      showStatus("error", failureText("Spustenie zlyhalo", err));
     } finally {
       setRunning(false);
     }
-  }, [exerciseId]);
-
-  // ── drop zone ─────────────────────────────────────────────────
-  const onDropZone = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
-  };
+  }, [exerciseId, showStatus]);
 
   // ── render ────────────────────────────────────────────────────
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-6">
 
-      {/* ── header ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Editor
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Nahrajte video, upravte snímky, spustite na robotovi.
-          </p>
-        </div>
-        {exerciseId && (
-          <div className="flex items-center gap-2">
+      <PageHeader
+        title="Editor"
+        description="Nahrajte video, upravte snímky, spustite na robotovi."
+        actions={exerciseId && (
+          <>
+            <Button size="sm" variant="outline" onClick={resetEditor}>
+              <Upload className="h-3.5 w-3.5" />
+              Nahrať iné video
+            </Button>
             <Button
               size="sm"
-              variant={voiceEditOpen ? "default" : "outline"}
+              variant={voiceEditOpen ? "secondary" : "outline"}
               onClick={() => setVoiceEditOpen((v) => !v)}
               disabled={!frames.length}
             >
-              <Mic className="h-3.5 w-3.5 mr-1.5" />
+              <Mic className="h-3.5 w-3.5" />
               Hlasová úprava
             </Button>
-            <Button
-              size="sm"
-              onClick={runExercise}
-              disabled={running || !frames.length}
-              className="text-primary-foreground"
-            >
-              {running
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                : <Play className="h-3.5 w-3.5 mr-1.5" />
-              }
+            <Button size="sm" onClick={runExercise} disabled={running || !frames.length}>
+              {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               Spustiť na robotovi
             </Button>
-          </div>
+          </>
         )}
-      </div>
+      />
 
-      {/* ── status alert ── */}
-      {status && (
-        <Alert
-          variant={status.type === "error" ? "destructive" : "default"}
-          className={
-            status.type === "success" ? "border-green-500 bg-green-50 dark:bg-green-950/20" :
-            status.type === "info"    ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20" : ""
-          }
-        >
-          {status.type === "error"
-            ? <AlertCircle className="h-4 w-4" />
-            : <CheckCircle className="h-4 w-4 text-green-600" />
-          }
-          <AlertDescription>{status.text}</AlertDescription>
-        </Alert>
-      )}
+      <StatusAlert status={status} />
 
       {/* ── voice edit panel ── */}
       {voiceEditOpen && exerciseId && (
@@ -551,139 +544,80 @@ export default function ExerciseEditor() {
         <div className="flex items-center gap-6">
           <label className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Snímky za sekundu</span>
-            <input
+            <Input
               type="number"
               min={1}
               max={30}
               value={fps}
               onChange={(e) => setFps(Math.max(1, Math.min(30, Number(e.target.value))))}
-              className="w-16 h-7 text-sm text-center border border-border rounded-md bg-background text-foreground px-2"
+              className="h-7 w-16 px-2 text-center"
             />
           </label>
           <label className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Max snímok</span>
-            <input
+            <Input
               type="number"
               min={1}
               max={200}
               value={maxFrames}
               onChange={(e) => setMaxFrames(Math.max(1, Math.min(200, Number(e.target.value))))}
-              className="w-16 h-7 text-sm text-center border border-border rounded-md bg-background text-foreground px-2"
+              className="h-7 w-16 px-2 text-center"
             />
           </label>
         </div>
       )}
 
-      {/* ── upload zone (shown when no exercise loaded) ── */}
-      {!exerciseId && (
-        <Card
-          className={[
-            "border-2 border-dashed transition-colors duration-200 cursor-pointer",
-            "hover:border-primary/50 hover:bg-muted/30",
-            uploading ? "opacity-60 pointer-events-none" : "",
-          ].join(" ")}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDropZone}
-          onClick={() => fileInputRef.current?.click()}
+      {/* ── range selection ── */}
+      {!exerciseId && pending.file && pending.url && (
+        <SelectedFileCard
+          file={pending.file}
+          onClear={clearPendingVideo}
+          onSubmit={() => handleUpload(pending.file!, videoRange)}
+          submitLabel={uploading ? "Spracovanie videa…" : "Spracovať vybranú časť"}
+          submitting={uploading}
+          submitDisabled={!videoRange}
         >
-          <div className="flex flex-col items-center justify-center gap-4 py-16 px-8 text-center">
-            {uploading ? (
-              <>
-                <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                <p className="text-sm text-muted-foreground">Nahrávanie videa…</p>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center">
-                  <Film className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Presuňte video sem</p>
-                  <p className="text-xs text-muted-foreground mt-1">alebo kliknite pre výber</p>
-                </div>
-                <Badge variant="secondary" className="text-xs">MP4 · MOV · AVI · WEBM</Badge>
-              </>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
-          />
-        </Card>
+          <VideoTrimmer key={pending.url} src={pending.url} onChange={setVideoRange} />
+        </SelectedFileCard>
       )}
 
-      {/* ── upload new video button when exercise exists ── */}
+      {/* ── upload zone (shown when no exercise loaded) ── */}
+      {!exerciseId && !pending.file && (
+        <FileDropzone
+          onFile={selectVideo}
+          onReject={() => showStatus("error", "Prosím vyberte video súbor.")}
+          accept="video/*"
+          formats="MP4, MOV, AVI, WEBM"
+        />
+      )}
+
+      {/* ── exercise name and AI estimates ── */}
       {exerciseId && (
         <div className="flex flex-col gap-2">
-          {/* inline rename */}
-        <div className="flex items-center gap-4">
-          {editingName ? (
-            <div className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                className="text-sm border border-border rounded px-2 py-0.5 bg-background text-foreground w-48"
-                value={exerciseName}
-                onChange={(e) => setExerciseName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { renameExercise(exerciseName); setEditingName(false); }
-                  if (e.key === "Escape") setEditingName(false);
-                }}
-              />
-              <button onClick={() => { renameExercise(exerciseName); setEditingName(false); }}
-                className="text-green-600 hover:text-green-700">
-                <CheckCircle className="h-4 w-4" />
-              </button>
-              <button onClick={() => setEditingName(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              className="flex items-center gap-1.5 text-sm text-foreground hover:text-primary transition-colors group"
-              onClick={() => setEditingName(true)}
-            >
-              <span className="font-medium">{exerciseName || "Nepomenované cvičenie"}</span>
-              <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
-          )}
-
-          {/* calorie estimate */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ExerciseNameInput name={exerciseName} onRename={renameExercise} className="w-64" />
             {caloriesLoading ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                <span className="text-[11px] text-muted-foreground">Odhadovanie kalorií…</span>
-              </>
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Odhadovanie kalórií…
+              </span>
             ) : calories != null ? (
-              <>
-                <span className="text-[11px] font-medium text-foreground">{calories} kcal</span>
-                <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 px-1.5 py-0.5 rounded-full">Odhad AI</span>
-              </>
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Flame className="h-3.5 w-3.5" />
+                {calories} kcal
+                <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">Odhad AI</Badge>
+              </span>
             ) : null}
           </div>
-
-          <button
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
-            onClick={() => { setExerciseId(null); setFrames([]); setStatus(null); setExerciseName(""); setCalories(null); setDescription(null); }}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Nahrať iné video
-          </button>
+          {descLoading ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Generovanie popisu pomocou AI…
+            </span>
+          ) : description ? (
+            <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">{description}</p>
+          ) : null}
         </div>
-
-        {/* description */}
-        {descLoading ? (
-          <div className="flex items-center gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-            <span className="text-[11px] text-muted-foreground">Generovanie popisu pomocou AI…</span>
-          </div>
-        ) : description ? (
-          <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
-        ) : null}
-      </div>
       )}
 
       {/* ── loading frames spinner ── */}
@@ -699,15 +633,17 @@ export default function ExerciseEditor() {
       {/* ── frame timeline ── */}
       {!loadingFrames && frames.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {frames.length} Snímk{frames.length === 1 ? "a" : frames.length < 5 ? "y" : "ok"}
-              <span className="ml-2 normal-case font-normal">— pretiahnite pre zmenu poradia</span>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-foreground">Snímky</h2>
+            <Badge variant="secondary" className="tabular-nums">{frames.length}</Badge>
+            <p className="ml-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <GripVertical className="h-3.5 w-3.5" />
+              Poradie zmeníte pretiahnutím
             </p>
           </div>
 
           {/* horizontal scrollable frame strip */}
-          <div className="overflow-x-auto md:overflow-x-auto overflow-y-auto pb-3">
+          <div className="overflow-x-auto overflow-y-auto pb-3">
             <div className="flex flex-col md:flex-row items-stretch gap-3 md:min-w-max">
               {frames.map((frame, i) => (
                 <div key={`${frame.idx}-${i}`} className="flex items-stretch gap-3">
@@ -725,13 +661,9 @@ export default function ExerciseEditor() {
                     onDelete={() => deleteFrame(frame.idx)}
                     inserting={insertingAt !== null}
                     deleting={deletingAt === frame.idx}
-                    isDragOver={false}
                     showStatus={showStatus}
                     draggable
-                    openVoiceLines={openVoiceLines}
-                    setOpenVoiceLines={setOpenVoiceLines}
                     onDragStart={() => drag.onDragStart(i)}
-                    onDragEnter={() => {}}
                     onDragEnd={() => { drag.onDragEnd(); setDragOver(null); }}
                     onDragOver={(e: React.DragEvent) => {
                       e.preventDefault();
@@ -757,7 +689,7 @@ export default function ExerciseEditor() {
       {/* ── empty state after load ── */}
       {!loadingFrames && exerciseId && frames.length === 0 && (
         <Card className="flex flex-col items-center justify-center py-16 gap-3">
-          <Film className="h-8 w-8 text-muted-foreground/40" />
+          <Film className="h-8 w-8 text-muted-foreground opacity-40" />
           <p className="text-sm text-muted-foreground">Nenašli sa žiadne snímky.</p>
           <Button variant="outline" size="sm" onClick={() => loadFrames(exerciseId)}>
             Skúsiť znova
@@ -784,26 +716,33 @@ function AnglesTooltip({ angles }: { angles: Record<string, number> }) {
   const count = Object.keys(angles).length;
 
   return (
-    <div className="px-3 pb-1 relative">
-      <p
-        className="text-[10px] text-muted-foreground cursor-default"
-        onMouseEnter={count > 0 ? show : undefined}
-        onMouseLeave={count > 0 ? hide : undefined}
-      >
-        {count > 0 ? `Uhly (${count})` : <span className="italic">žiadne dáta uhlov</span>}
-      </p>
-      {open && count > 0 && (
-        <div
-          className="absolute bottom-full left-0 w-52 z-50 rounded-lg border border-border bg-popover shadow-lg px-2 py-1.5 max-h-52 overflow-y-auto"
+    <div className="px-3 pt-1.5 relative">
+      {count > 0 ? (
+        <span
+          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 cursor-default hover:text-foreground transition-colors"
           onMouseEnter={show}
           onMouseLeave={hide}
         >
-          {Object.entries(angles).map(([k, v]) => (
-            <div key={k} className="flex justify-between font-mono text-[9px] text-muted-foreground py-px">
-              <span>{k}</span>
-              <span>{typeof v === "number" ? v.toFixed(3) : v}</span>
-            </div>
-          ))}
+          Uhly
+        </span>
+      ) : (
+        <span className="text-[11px] italic text-muted-foreground">žiadne dáta uhlov</span>
+      )}
+      {open && count > 0 && (
+        <div
+          className="absolute bottom-full left-3 mb-1 w-56 z-50 rounded-lg border bg-popover text-popover-foreground shadow-lg p-2"
+          onMouseEnter={show}
+          onMouseLeave={hide}
+        >
+          <p className="px-1 pb-1.5 mb-1 border-b text-[11px] font-medium">Uhly kĺbov (rad)</p>
+          <div className="max-h-52 overflow-y-auto">
+            {Object.entries(angles).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-3 rounded px-1 py-0.5 text-[11px] hover:bg-muted">
+                <span className="text-muted-foreground">{k}</span>
+                <span className="font-mono tabular-nums">{typeof v === "number" ? v.toFixed(3) : v}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -811,6 +750,9 @@ function AnglesTooltip({ angles }: { angles: Record<string, number> }) {
 }
 
 // ── FrameCard sub-component ───────────────────────────────────────
+const MENU_CONTENT = "z-50 min-w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md";
+const MENU_ITEM = "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none cursor-default select-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 data-[disabled]:pointer-events-none";
+
 type FrameCardProps = {
   frame: Frame;
   position: number;
@@ -821,10 +763,9 @@ type FrameCardProps = {
   onDelete: () => void;
   inserting: boolean;
   deleting: boolean;
-  isDragOver: boolean;
+  showStatus: (type: StatusType, text: string) => void;
   draggable: boolean;
   onDragStart: () => void;
-  onDragEnter: () => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
 };
@@ -840,450 +781,332 @@ function FrameCard({
   inserting,
   deleting,
   showStatus,
-  isDragOver,
-  openVoiceLines, 
-  setOpenVoiceLines,
   ...dragProps
 }: FrameCardProps) {
-  const imageUrl = `${EDITOR_API}/exercise/${exerciseId}/frame/${frame.idx}/image`;
-  const poseImageUrl = frame.pose_name ? `${POSES_API}/pose/${frame.pose_name}/image` : null;
-  const [imgError, setImgError] = useState(false);
-  const [poseImgError, setPoseImgError] = useState(false);
-  const [beforeVal, setBeforeVal] = useState("");
-  const [afterVal, setAfterVal]   = useState("");
-  const [toggleText, setTextToggle] = useState(false);
+  // ── voice lines, saved on blur, after dictation and on voice change ──
+  const [voiceText, setVoiceText] = useState("");
+  const [speechLanguage, setSpeechLanguage] = useState<string>(DEFAULT_SPEECH_LANGUAGE);
+  const [speechSpeed, setSpeechSpeed] = useState<number>(DEFAULT_SPEECH_SPEED);
+  const [voiceSaved, setVoiceSaved] = useState(false);
+  const [dictation, setDictation] = useState<"idle" | "recording" | "transcribing">("idle");
   const [naoSaying, setNaoSaying] = useState(false);
-  const noExtractedText = "Nothing so far";
-  const textAreaRef = useRef<any>(null);
-  const [overallRecordedMessage, onOverallRecordedMessageChange] = useState({"extractedText": noExtractedText});
-  const [savingAt, setSavingVoiceLinesAt]  = useState<number | null>(null);
-  const [speechLanguage, setSpeechLanguage] = useState<string>("English");
-  const [speechSpeed, setSpeechSpeed] = useState<number>(100);
-  
-  const audioRecorderRef = useRef(null);
-  const aggregatedVoiceLinesRef = useRef<HTMLTextAreaElement>(null);
-  let [configLoaded, setConfigLoaded] = useState(false);
-  const [voiceLinesLoaded, setVoiceLinesLoaded] = useState(false);
-
-  
-  const imgEl = !imgError ? (
-    <img src={imageUrl} alt={`Frame ${frame.idx}`} className="w-full h-full object-cover rounded-lg bg-muted" onError={() => setImgError(true)} />
-  ) : poseImageUrl && !poseImgError ? (
-    <img src={poseImageUrl} alt={frame.pose_name} className="w-full h-full object-cover rounded-lg bg-muted" onError={() => setPoseImgError(true)} />
-  ) : (
-    <div className="w-full h-full rounded-lg bg-muted flex items-center justify-center">
-      <Film className="h-5 w-5 text-muted-foreground/40" />
-    </div>
-  );
-
-  const extractText = (overallMessages: any) => {
-    let resultingText = "";
-    console.log(overallMessages);
-    if (overallMessages["extractedText"] !== undefined && overallMessages["extractedText"] !== "Nothing so far") {
-      console.log(overallMessages["extractedText"]);
-      return overallMessages["extractedText"];
-    }
-    if (overallMessages["voice_lines_configs"] !== undefined) {
-      for (const [key, value] of Object.entries(overallMessages["voice_lines_configs"])) {
-          if (value["translation"] !== undefined) { 
-              resultingText = resultingText + " " + value["translation"];
-          }
-      }
-    }
-    
-    return resultingText;
-  }
-
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const savedVoiceText = useRef("");
+  const recorder = useRef<MediaRecorder | null>(null);
+  const voiceConfigUrl = `${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
 
   useEffect(() => {
-    async function loadVoiceLines(overallRecordedMessage) {
-      if (!overallRecordedMessage || !configLoaded) {
-       setConfigLoaded(true);
-        try {
-          fetch(`${EDITOR_API}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`, {
-            method: "GET",
-          }).then((response) => {
-            if (response.ok) {
-              return response.json();
-            }
-            throw new Error("Message not in JSON");
-          })
-          .then((data) => {
-            const extractededText = extractText(data);
-            if  ( extractededText !== "") {
-                /*for (const [key, value] of Object.entries(data["voice_lines_configs"])) {
-                  if (overallRecordedMessage["voice_lines_configs"] === undefined) {
-                      overallRecordedMessage["voice_lines_configs"] = {};
-                  }
-                  overallRecordedMessage["voice_lines_configs"][key] = value;
-                }*/
-                console.log("LODED.........................................");
-                console.log(data);
-                if (data["lang"] !== undefined) {
-                  overallRecordedMessage["lang"] = data["lang"]; 
-                  setSpeechLanguage(data["lang"]);
-                }
-                if (data["speed"] !== undefined) {
-                  overallRecordedMessage["speed"] = data["speed"]; 
-                   setSpeechSpeed(data["speed"]);
-                }
+    fetch(voiceConfigUrl)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((config: VoiceLinesConfig) => {
+        const text = voiceTextFromConfig(config);
+        savedVoiceText.current = text;
+        setVoiceText(text);
+        if (config.lang) setSpeechLanguage(config.lang);
+        if (config.speed !== undefined) setSpeechSpeed(Number(config.speed));
+      })
+      .catch(() => {/* no voice lines yet */});
+  }, [voiceConfigUrl]);
 
-                overallRecordedMessage["extractedText"] = extractededText;
-                aggregatedVoiceLinesRef.current.value = overallRecordedMessage["extractedText"];
-                onOverallRecordedMessageChange(overallRecordedMessage);
-            } 
-          })
-          .catch((error) => {
-            console.log(error);
-          });
-        } catch(e) {
-          console.log(e);
-        }
-      }
-    }
+  // release microphone when card unmounts mid-recording
+  useEffect(() => () => recorder.current?.stream.getTracks().forEach((track) => track.stop()), []);
 
-    loadVoiceLines(overallRecordedMessage);
-  }, [overallRecordedMessage]);
-
-  useEffect(()=>{
-    async function fetchAllVoiceLines() {
-    if (toggleText && !voiceLinesLoaded) {
-      setVoiceLinesLoaded(true);
-      let resultingText = "";
-      if (overallRecordedMessage["voice_lines_configs"] !== undefined ) {
-        for (const [key, value] of Object.entries(overallRecordedMessage["voice_lines_configs"])) {
-          try {
-            fetch(`${EDITOR_API}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}/${value["fileName"]}`, {
-              method: "GET",
-            }).then((response) => {
-              if (response.ok) {
-                return response.json();
-              }
-              throw new Error("Message not in JSON");
-            })
-            .then((data) => {
-              const audioFormat = data["audioFormat"];
-              const audioInBase64 = data["sound"];
-              if (audioFormat === "webm") {
-                audioRecorderRef.current.createCustomAudioPlayerFromBase64(audioInBase64, value["translation"]);
-              }
-            })
-            .catch((error) => {
-              console.log(error);
-            });
-          } catch(e) {
-            console.log(e);
-          }
-        }
-      }
-      }
-    }
-    
-    fetchAllVoiceLines(); 
-  },[toggleText]);
-
-  const saveAudioFile = async (audioInBase64, fileNameWithFormat) => {
-    const res = await fetch(`${EDITOR_API}/voiceLines/sound/exercise/${exerciseId}/frame/${frame.idx}`, {
+  // field is the only source: saving drops older recorded lines, so a cleared field means silence
+  const saveVoice = async (text: string, lang = speechLanguage, speed = speechSpeed) => {
+    const config: VoiceLinesConfig = { extractedText: hasVoiceText(text) ? text : NO_VOICE_TEXT, lang, speed };
+    try {
+      const res = await fetch(voiceConfigUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          "sound": audioInBase64,
-          "file_name": fileNameWithFormat
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice_lines: config }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      //showStatus("success", "Subot s hláškami " + fileNameWithFormat + " uložené.");
+      savedVoiceText.current = text;
+      setVoiceSaved(true);
+      setTimeout(() => setVoiceSaved(false), 2000);
+    } catch (err) {
+      showStatus("error", failureText("Uloženie textu zlyhalo", err));
+    }
   };
 
-  const onSavingVoiceLines = async (exerciseId: number, frameIdx: number, overallRecordedMessage: any) => {
-    setSavingVoiceLinesAt(frameIdx);
-    overallRecordedMessage["lang"] = speechLanguage;
-    overallRecordedMessage["speed"] = speechSpeed;
-    try {
-      const res = await fetch(`${EDITOR_API}/voiceLines/config/exercise/${exerciseId}/frame/${frameIdx}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          "voice_lines": overallRecordedMessage
-        })
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      showStatus("success", "Hlášky uložené.");
-    } catch (err) {
-      showStatus("error", err instanceof Error ? err.message : "Uloženie hlášok zlyhalo");
-    } finally {
-      setSavingVoiceLinesAt(null);
+  const changeSpeech = (lang: string, speed: number) => {
+    setSpeechLanguage(lang);
+    setSpeechSpeed(speed);
+    saveVoice(voiceText, lang, speed);
+  };
+
+  // record voice, transcribe, append text to field
+  const toggleDictation = async () => {
+    if (dictation === "recording") {
+      recorder.current?.stop();
+      return;
     }
-  }
-
-
-    const onRobotSay = async (textConfigToBeSaid) => {
-      setNaoSaying(true);
-      console.log(textConfigToBeSaid);
+    if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported("audio/webm")) {
+      showStatus("error", "Diktovanie nie je v tomto prehliadači podporované. Použite Chrome alebo Edge.");
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      showStatus("error", "Mikrofón nie je dostupný.");
+      return;
+    }
+    const chunks: Blob[] = [];
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      setDictation("transcribing");
       try {
-        const res = await fetch(`${ROBOT_API}/voiceLines/applyVoiceLine`, {
+        const audio = await blobToBase64(new Blob(chunks, { type: "audio/webm" }));
+        const res = await fetch(`${API_BASE}/translate/webm`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            "voice_lines": textConfigToBeSaid
-          })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio_file: audio, model: "large-v1" }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        showStatus("success", "Robot povedal.");
+        const { translation } = await res.json();
+        if (translation) {
+          const text = voiceText.trim() ? `${voiceText.trim()} ${translation}` : translation;
+          setVoiceText(text);
+          saveVoice(text);
+        } else {
+          showStatus("info", "Nič sa nerozpoznalo.");
+        }
       } catch (err) {
-        showStatus("error", err instanceof Error ? err.message : "Uloženie hlášok zlyhalo");
+        showStatus("error", failureText("Prepis reči zlyhal", err));
       } finally {
-        setNaoSaying(null);
+        setDictation("idle");
       }
+    };
+    recorder.current = mediaRecorder;
+    mediaRecorder.start();
+    setDictation("recording");
+  };
+
+  // robot says text now, nothing saved
+  const sayOnRobot = async () => {
+    if (!hasVoiceText(voiceText)) {
+      showStatus("info", "Najprv napíšte, čo má robot povedať.");
+      return;
     }
-
-
-    
-  const testVoiceLines = async () => {
-    if (audioRecorderRef.current !== null) {
-      console.log(aggregatedVoiceLinesRef.current);
-      let textFromTextArea = aggregatedVoiceLinesRef.current.value;
-      
-      console.log(textFromTextArea);
-      if (textFromTextArea !== "Nothing so far") {
-          const textConfigToBeSaid = {
-            "voice_lines_configs": {"entire": {"translation": textFromTextArea}},
-            "lang": speechLanguage,
-            "speed": speechSpeed
-          }
-          onRobotSay(textConfigToBeSaid);
-          return;
-      }
-
-      let textConfigToBeSaid = audioRecorderRef.current.getTextConfigFromVoiceLinesToBeSaidByRobot();
-      if (Object.keys(textConfigToBeSaid["voice_lines_configs"]).length === 0 && overallRecordedMessage["extractedText"] !== noExtractedText) {
-        textConfigToBeSaid["voice_lines_configs"] = overallRecordedMessage["voice_lines_configs"];
-      }
-      textConfigToBeSaid["lang"] = speechLanguage;
-      textConfigToBeSaid["speed"] = speechSpeed;
-      onRobotSay(textConfigToBeSaid);
-    } else {
-      if (aggregatedVoiceLinesRef === null) { 
-        throw new Exception("HTML Textarea not initialized.");
-        return;
-      }
-      const textToBeSaidByRobot = aggregatedVoiceLinesRef.current.value;
-      onRobotSay(textConfigToBeSaid);
+    const voice_lines_configs = { entire: { translation: voiceText } };
+    setNaoSaying(true);
+    try {
+      const res = await fetch(`${API_BASE}/voiceLines/applyVoiceLine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice_lines: { voice_lines_configs, lang: speechLanguage, speed: speechSpeed } }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      showStatus("error", failureText("Robot nemohol hovoriť", err));
+    } finally {
+      setNaoSaying(false);
     }
-  }
+  };
 
+  // shared by mobile and desktop layouts
+  const frameMenu = (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label="Možnosti snímky" disabled={inserting || deleting}>
+          {inserting || deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT}>
+          {([["Vložiť pózu pred", onInsertBefore, ChevronLeft], ["Vložiť pózu za", onInsertAfter, ChevronRight]] as const).map(
+            ([label, onInsert, Icon]) => (
+              <DropdownMenu.Sub key={label}>
+                <DropdownMenu.SubTrigger className={MENU_ITEM} disabled={poses.length === 0}>
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  {label}
+                  <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
+                </DropdownMenu.SubTrigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.SubContent sideOffset={4} className={`${MENU_CONTENT} max-h-72 overflow-y-auto`}>
+                    {poses.map((p) => (
+                      <DropdownMenu.Item key={p.name} className={MENU_ITEM} onSelect={() => onInsert(p.name)}>
+                        {poseLabel(p.name)}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.SubContent>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Sub>
+            )
+          )}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <RadioSubmenu
+            icon={Languages}
+            label="Jazyk reči"
+            value={speechLanguage}
+            options={SPEECH_LANGUAGES}
+            onChange={(lang) => changeSpeech(lang, speechSpeed)}
+          />
+          <RadioSubmenu
+            icon={Gauge}
+            label="Rýchlosť reči"
+            value={String(speechSpeed)}
+            options={SPEECH_SPEEDS.map((speed) => [String(speed), `${speed} %`])}
+            onChange={(speed) => changeSpeech(speechLanguage, Number(speed))}
+          />
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item className={`${MENU_ITEM} text-destructive data-[highlighted]:text-destructive`} onSelect={() => setConfirmDelete(true)}>
+            <Trash2 className="h-4 w-4" />
+            Odstrániť snímku
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
 
   return (
     <div
       {...dragProps}
       className={[
-        "w-full md:w-52 md:shrink-0 rounded-xl border bg-card text-card-foreground shadow-sm",
+        "w-full md:w-60 md:shrink-0 rounded-xl border bg-card text-card-foreground shadow-sm",
         "transition-all duration-150 cursor-grab active:cursor-grabbing",
         deleting ? "opacity-40 pointer-events-none" : "",
       ].join(" ")}
     >
       {/* ── mobile: compact horizontal row ── */}
       <div className="flex md:hidden items-center gap-3 px-3 py-2">
-        {/* thumbnail */}
-        <div className="w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-muted">
-          {imgEl}
-        </div>
-        {/* index + drag handle */}
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <div className="flex items-center justify-between">
-            <span className="bg-muted text-muted-foreground text-[10px] font-mono px-1.5 py-0.5 rounded">
-              #{position + 1}
-            </span>
-            <GripVertical className="h-4 w-4 text-muted-foreground/40" />
-          </div>
-          {/* insert selects inline */}
-          <div className="flex gap-1.5">
-            <select
-              className="flex-1 h-6 rounded border border-gray-300 bg-white text-gray-800 text-[10px] px-1 disabled:opacity-50"
-              value=""
-              onChange={(e) => { if (e.target.value) { onInsertBefore(e.target.value); e.target.value = ""; } }}
-              disabled={inserting}
-            >
-              <option value="" disabled>← Pred</option>
-              {poses.map((p) => <option key={p.name} value={p.name}>{POSE_DISPLAY_SK[p.name] ?? p.name}</option>)}
-            </select>
-            <select
-              className="flex-1 h-6 rounded border border-gray-300 bg-white text-gray-800 text-[10px] px-1 disabled:opacity-50"
-              value=""
-              onChange={(e) => { if (e.target.value) { onInsertAfter(e.target.value); e.target.value = ""; } }}
-              disabled={inserting}
-            >
-              <option value="" disabled>Za →</option>
-              {poses.map((p) => <option key={p.name} value={p.name}>{POSE_DISPLAY_SK[p.name] ?? p.name}</option>)}
-            </select>
-            <button
-              onClick={onDelete}
-              disabled={deleting}
-              className="text-gray-400 hover:text-red-500 transition-colors px-1"
-            >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            </button>
-          </div>
+        <FrameImage frame={frame} exerciseId={exerciseId} className="w-14 h-14 shrink-0 object-cover" />
+        <span className="text-sm font-medium text-foreground tabular-nums">{position + 1}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <GripVertical className="h-4 w-4 text-muted-foreground opacity-40" />
+          {frameMenu}
         </div>
       </div>
 
       {/* ── desktop: vertical card ── */}
       <div className="hidden md:flex flex-col h-full">
         {/* header */}
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <span className="bg-muted text-muted-foreground text-[10px] font-mono px-1.5 py-0.5 rounded">
-            #{position + 1}
-          </span>
-          <GripVertical className="h-4 w-4 text-muted-foreground/40" />
+        <div className="flex items-center gap-1 pl-3 pr-1.5 pt-1.5 pb-1">
+          <span className="text-sm font-medium text-foreground tabular-nums">{position + 1}</span>
+          <GripVertical className="h-4 w-4 ml-auto text-muted-foreground opacity-40" />
+          {frameMenu}
         </div>
 
-        {/* image */}
-        <div className="px-3 pb-2 flex-1">
-          {!imgError ? (
-            <img src={imageUrl} alt={`Frame ${frame.idx}`} className="w-full h-auto rounded-lg bg-muted" onError={() => setImgError(true)} />
-          ) : poseImageUrl && !poseImgError ? (
-            <img src={poseImageUrl} alt={frame.pose_name} className="w-full h-auto rounded-lg bg-muted" onError={() => setPoseImgError(true)} />
-          ) : (
-            <div className="w-full h-32 rounded-lg bg-muted flex items-center justify-center">
-              <Film className="h-6 w-6 text-muted-foreground/40" />
-            </div>
-          )}
+        <div className="px-3 flex-1">
+          <FrameImage frame={frame} exerciseId={exerciseId} className="w-full min-h-32" />
         </div>
 
-        {/* bottom */}
+        <AnglesTooltip angles={frame.angles} />
+
         <div className="mt-auto">
-          <AnglesTooltip angles={frame.angles} />
-          <div className="px-3 pt-1 pb-1">
-            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Vložiť pózu</p>
-          </div>
-          <div className="px-3 pb-3 flex gap-1.5">
-            <label className="flex-1 flex flex-col gap-0.5">
-              <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
-                <ChevronLeft className="h-3 w-3" /> Pred
-              </span>
-              <select
-                className="w-full h-7 rounded-md border border-gray-300 bg-white text-gray-800 text-xs px-1.5 disabled:opacity-50"
-                value=""
-                onChange={(e) => { if (e.target.value) { onInsertBefore(e.target.value); e.target.value = ""; } }}
-                disabled={inserting}
-              >
-                <option value="" disabled>Póza…</option>
-                {poses.map((p) => <option key={p.name} value={p.name}>{POSE_DISPLAY_SK[p.name] ?? p.name}</option>)}
-              </select>
+          <div className="px-3 pt-5 pb-3 flex flex-col gap-2">
+            <label htmlFor={`voice-text-${frame.idx}`} className="text-xs font-medium text-foreground">
+              Čo povie NAO
             </label>
-            <label className="flex-1 flex flex-col gap-0.5">
-              <span className="text-[10px] text-gray-500 flex items-center gap-0.5 justify-end">
-                Za <ChevronRight className="h-3 w-3" />
-              </span>
-              <select
-                className="w-full h-7 rounded-md border border-gray-300 bg-white text-gray-800 text-xs px-1.5 disabled:opacity-50"
-                value=""
-                onChange={(e) => { if (e.target.value) { onInsertAfter(e.target.value); e.target.value = ""; } }}
-                disabled={inserting}
-              >
-                <option value="" disabled>Póza…</option>
-                {poses.map((p) => <option key={p.name} value={p.name}>{POSE_DISPLAY_SK[p.name] ?? p.name}</option>)}
-              </select>
-            </label>
-          </div>
-          <div>
-            <div>
-              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide" style={{ flex: "0 0 calc(100% - 70px)", marginLeft: "10px" }}>What NAO says</p>
-              <textarea ref={aggregatedVoiceLinesRef} style={{width: "100%", height: "100px", border: "1px solid black", borderRadius: "25px",
-                 padding: "30px 30px 30px 30px"}} name="textFromVideo" 
-                 onChange={(e) => {overallRecordedMessage["extractedText"] = e.target.value; onOverallRecordedMessageChange(overallRecordedMessage); }}>
-                  {overallRecordedMessage["extractedText"]}
-              </textarea>
-              <div className="flex items-center gap-2" style={{"margin": "10px 10px 10px 10px"}}>
-                <button
-                  onClick={() => onSavingVoiceLines(exerciseId, frame.idx, overallRecordedMessage)}
-                  disabled={savingAt === frame.idx}
-                  className="w-full flex items-center justify-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors py-1 rounded-md hover:bg-red-50"
-                  aria-label="Uložiť hlášky"
-                >
-                {savingAt === frame.idx
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <Save className="h-3.5 w-3.5" />
-                }
-                Uložiť hlášky
-              </button>
+            <Textarea
+              id={`voice-text-${frame.idx}`}
+              placeholder="Napíšte alebo nadiktujte…"
+              value={voiceText}
+              onChange={(e) => setVoiceText(e.target.value)}
+              onBlur={() => { if (voiceText !== savedVoiceText.current) saveVoice(voiceText); }}
+              disabled={dictation !== "idle"}
+              className="min-h-18 resize-none px-2 py-1.5 text-xs md:text-xs"
+            />
+            <div className="flex items-center gap-1">
               <Button
-                size="sm"
-                onClick={testVoiceLines}
-                disabled={naoSaying}
-                className="text-primary-foreground"
+                variant={dictation === "recording" ? "destructive" : "ghost"}
+                size="icon-sm"
+                onClick={toggleDictation}
+                disabled={dictation === "transcribing"}
+                aria-label={dictation === "recording" ? "Zastaviť diktovanie" : "Diktovať text"}
+                title={dictation === "recording" ? "Zastaviť diktovanie" : "Diktovať text"}
               >
-                {naoSaying
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                  : <Play className="h-3.5 w-3.5 mr-1.5" />
-                }
+                {dictation === "transcribing"
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : dictation === "recording" ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-4 w-4" />}
+              </Button>
+              <span className="truncate text-[11px] text-muted-foreground" aria-live="polite">
+                {dictation === "recording" ? "Nahrávam…" : dictation === "transcribing" ? "Prepisujem…" : voiceSaved ? "Uložené" : ""}
+              </span>
+              <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={sayOnRobot} disabled={naoSaying}>
+                {naoSaying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 Povedz
               </Button>
             </div>
           </div>
-            <div style={{display: "flex"}}>
-              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide" style={{ flex: "0 0 calc(100% - 70px)", marginLeft: "10px" }}>Record and speech summary</p>
-              
-              <Switch.Root onCheckedChange={(e) => {
-                
-                 setTextToggle(e);
-                 if (!toggleText) { 
-                    setOpenVoiceLines(frame.idx); 
-                 } else { 
-                    setOpenVoiceLines(null); 
-                 }   
-              }} style={{width: "50px", marginRight: "10px"}} className="SwitchRoot">
-                  <Switch.Thumb className="SwitchThumb" />
-              </Switch.Root>
-            </div>
-          </div>
-          <div style={{display: (openVoiceLines === frame.idx && toggleText)? "block": "none", position: "relative"}}>
-              <div style={{position: "absolute"}}>
-                <AudioRecorderComponent ref={audioRecorderRef} speechSpeed={speechSpeed} setSpeechSpeed={setSpeechSpeed} speechLanguage={speechLanguage} setSpeechLanguage={setSpeechLanguage} saveAudioFile={saveAudioFile} overallRecordedMessage={overallRecordedMessage} onOverallRecordedMessageChange={onOverallRecordedMessageChange} aggregatedVoiceLinesRef={aggregatedVoiceLinesRef}/>
-              </div>
-          </div>
-          <div className="px-3 pb-3">
-            <button
-              onClick={onDelete}
-              disabled={deleting}
-              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors py-1 rounded-md hover:bg-red-50"
-              aria-label="Odstrániť snímku"
-            >
-            {deleting
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : <Trash2 className="h-3.5 w-3.5" />
-            }
-            Odstrániť
-          </button>
         </div>
-        </div>{/* end bottom */}
       </div>{/* end desktop card */}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Odstrániť snímku?"
+        description={`Snímka ${position + 1} sa natrvalo odstráni z cvičenia.`}
+        confirmLabel="Odstrániť"
+        onConfirm={onDelete}
+      />
     </div>
   );
 }
 
-// ── local keyword fallback for VoiceEditPanel ─────────────────────
-const POSE_ALIASES: [string, string][] = [
-  ["drep", "crouch"],
-  ["úklon", "bow"], ["uklon", "bow"],
-  ["zamávaj", "wave"], ["zamavaj", "wave"], ["zamávajte", "wave"],
-  ["stoj", "stand"],
-  ["sed", "sit"], ["sadni", "sit"],
-  ["ruky hore", "hands_up"],
-  ["t-póza", "t_pose"], ["t póza", "t_pose"], ["tpóza", "t_pose"], ["t poza", "t_pose"],
-  ["ukáž vpravo", "point_right"], ["ukaz vpravo", "point_right"],
-  ["ukáž vľavo", "point_left"], ["ukaz vlavo", "point_left"],
-  ["crouch", "crouch"], ["bow", "bow"], ["wave", "wave"], ["stand", "stand"],
-  ["sit", "sit"], ["hands up", "hands_up"], ["t pose", "t_pose"], ["t-pose", "t_pose"],
-  ["point right", "point_right"], ["point left", "point_left"],
-];
+// Frame photo, then pose image, then placeholder
+function FrameImage({ frame, exerciseId, className }: { frame: Frame; exerciseId: string; className: string }) {
+  const sources = [
+    `${API_BASE}/exercise/${exerciseId}/frame/${frame.idx}/image`,
+    frame.pose_name ? `${API_BASE}/pose/${frame.pose_name}/image` : null,
+  ].filter((src): src is string => src !== null);
+  const [failed, setFailed] = useState(0);
 
+  if (failed >= sources.length) {
+    return (
+      <div className={`${className} rounded-lg bg-muted flex items-center justify-center`}>
+        <Film className="h-5 w-5 text-muted-foreground opacity-40" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={sources[failed]}
+      alt={frame.pose_name ?? `Snímka ${frame.idx}`}
+      className={`${className} rounded-lg bg-muted`}
+      onError={() => setFailed((n) => n + 1)}
+    />
+  );
+}
+
+type RadioSubmenuProps = {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  options: [string, string][];
+  onChange: (value: string) => void;
+};
+
+function RadioSubmenu({ icon: Icon, label, value, options, onChange }: RadioSubmenuProps) {
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className={MENU_ITEM}>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        {label}
+        <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent sideOffset={4} className={MENU_CONTENT}>
+          <DropdownMenu.RadioGroup value={value} onValueChange={onChange}>
+            {options.map(([optionValue, optionLabel]) => (
+              <DropdownMenu.RadioItem key={optionValue} value={optionValue} className={MENU_ITEM}>
+                <span className="w-4">
+                  <DropdownMenu.ItemIndicator><Check className="h-4 w-4" /></DropdownMenu.ItemIndicator>
+                </span>
+                {optionLabel}
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  );
+}
+
+// ── local keyword fallback for VoiceEditPanel ─────────────────────
 const NUM_WORDS: Record<string, number> = {
   "jeden": 1, "jedna": 1, "jedno": 1, "one": 1,
   "dva": 2, "dve": 2, "two": 2,
@@ -1297,23 +1120,16 @@ const NUM_WORDS: Record<string, number> = {
   "desať": 10, "ten": 10,
 };
 
+// Whole words only, so "štyri" is not read as "tri" and "sedem" not as "sed"
 function parseCommandLocally(transcript: string, poses: PoseCommand[], frameCount: number): ParsedCommand | null {
-  const lower = transcript.toLowerCase();
-  const side: "before" | "after" = /\bpred\b|before/.test(lower) ? "before" : "after";
+  const side = wordPattern("pred|before").test(transcript) ? "before" : "after";
 
-  let frame: number | null = null;
-  const digitMatch = lower.match(/\d+/);
-  if (digitMatch) frame = parseInt(digitMatch[0]);
-  else for (const [word, num] of Object.entries(NUM_WORDS)) {
-    if (lower.includes(word)) { frame = num; break; }
-  }
+  const digits = transcript.match(/\d+/);
+  const word = Object.keys(NUM_WORDS).find((w) => wordPattern(w).test(transcript));
+  const frame = digits ? parseInt(digits[0]) : word ? NUM_WORDS[word] : null;
   if (!frame || frame < 1 || frame > frameCount) return null;
 
-  let pose: string | null = null;
-  for (const [alias, key] of POSE_ALIASES) {
-    if (lower.includes(alias) && poses.some(p => p.name === key)) { pose = key; break; }
-  }
-
+  const pose = findPoses(transcript).find((key) => poses.some((p) => p.name === key)) ?? null;
   return { pose, frame, side };
 }
 
@@ -1328,35 +1144,14 @@ type VoiceEditPanelProps = {
 type ParsedCommand = { pose: string | null; frame: number; side: "before" | "after" };
 
 function VoiceEditPanel({ poses, frameCount, onInsert, onClose }: VoiceEditPanelProps) {
-  const [listening, setListening]   = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const { listening, transcript, start, stop: stopListening, reset: resetTranscript } = useSpeechRecognition();
   const [phase, setPhase]           = useState<"idle" | "parsing" | "pick_pose" | "confirm" | "error">("idle");
   const [parsed, setParsed]         = useState<ParsedCommand | null>(null);
   const [pickedPose, setPickedPose] = useState("");
   const [errorMsg, setErrorMsg]     = useState("");
-  const recRef = useRef<any>(null);
-
   const startListening = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { setErrorMsg("Rozpoznávanie hlasu nie je podporované — použite Chrome alebo Edge."); setPhase("error"); return; }
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = "sk-SK";
-    rec.onstart  = () => setListening(true);
-    rec.onend    = () => setListening(false);
-    rec.onerror  = () => { setListening(false); };
-    rec.onresult = (e: any) => {
-      let text = "";
-      for (let i = e.resultIndex; i < e.results.length; i++)
-        text += e.results[i][0].transcript;
-      setTranscript(text);
-    };
-    recRef.current = rec;
-    rec.start();
+    if (!start()) { setErrorMsg(SPEECH_UNSUPPORTED); setPhase("error"); }
   };
-
-  const stopListening = () => recRef.current?.stop();
 
   const applyParsed = (result: ParsedCommand) => {
     setParsed(result);
@@ -1425,112 +1220,78 @@ No other text, only JSON.`,
     onClose();
   };
 
-  const reset = () => { setPhase("idle"); setParsed(null); setTranscript(""); setPickedPose(""); };
+  const reset = () => { setPhase("idle"); setParsed(null); resetTranscript(); setPickedPose(""); };
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <Card className="gap-4 px-6">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">Hlasová úprava</p>
-          {LLM_AVAILABLE
-            ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">AI aktívna</span>
-            : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Bez AI</span>
-          }
+          <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2">
+            <span>Povedzte napr. <span className="italic">„vlož drep za snímku 3“</span>.</span>
+            <AiBadge />
+          </p>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <Button variant="ghost" size="icon-sm" className="ml-auto -mt-1 -mr-2 shrink-0" onClick={onClose} aria-label="Zavrieť">
           <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <p className="text-xs text-gray-500">
-        {LLM_AVAILABLE
-          ? <>Povedzte napr. <span className="italic">"vlož drep za snímku 3"</span> — AI rozpozná aj skomolené slová.</>
-          : <>Povedzte napr. <span className="italic">"vlož drep za snímku 3"</span> — detekcia kľúčových slov (bez AI).</>
-        }
-      </p>
-
-      {/* mic button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={listening ? stopListening : startListening}
-          className={[
-            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-            listening
-              ? "bg-red-500 text-white hover:bg-red-600"
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200",
-          ].join(" ")}
-        >
-          {listening
-            ? <><MicOff className="h-4 w-4" /> Zastaviť</>
-            : <><Mic className="h-4 w-4" /> Hovoriť</>
-          }
-        </button>
-        {transcript && (
-          <p className="text-sm text-foreground flex-1 italic">"{transcript}"</p>
-        )}
-      </div>
-
-      {/* parse button */}
-      {transcript && phase === "idle" && (
-        <Button size="sm" className="w-full" onClick={parseWithLLM} disabled={listening}>
-          Rozpoznať príkaz
         </Button>
-      )}
+      </div>
 
-      {/* parsing spinner */}
-      {phase === "parsing" && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin" /> Interpretuje sa…
-        </div>
-      )}
+      <div className="flex flex-col items-center gap-2 py-2">
+        <MicButton size="md" listening={listening} onClick={listening ? stopListening : startListening} />
+        <p className="text-xs text-muted-foreground">
+          {listening ? "Počúvam… klepnite pre zastavenie" : "Klepnite pre hovorenie"}
+        </p>
+      </div>
 
-      {/* pose picker — frame+side known, pose unclear */}
-      {phase === "pick_pose" && parsed && (
-        <div className="space-y-2">
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
-            Snímka <strong>{parsed.frame}</strong>, smer <strong>{parsed.side === "before" ? "pred" : "za"}</strong> — vyberte pózu:
-          </div>
-          <select
-            className="w-full h-9 rounded-md border border-border bg-background text-foreground text-sm px-2"
-            value={pickedPose}
-            onChange={(e) => setPickedPose(e.target.value)}
-          >
-            <option value="" disabled>Póza…</option>
-            {poses.map((p) => (
-              <option key={p.name} value={p.name}>{POSE_DISPLAY_SK[p.name] ?? p.name}</option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1" disabled={!pickedPose} onClick={() => confirm(pickedPose)}>Potvrdiť</Button>
-            <Button size="sm" variant="outline" className="flex-1" onClick={reset}>Skúsiť znova</Button>
-          </div>
-        </div>
+      {(transcript || phase === "error") && (
+        <TranscriptBlock
+          transcript={transcript}
+          pending={phase === "parsing"}
+          error={phase === "error" ? errorMsg : undefined}
+          result={
+            phase === "confirm" && parsed?.pose ? (
+              <p className="text-sm text-foreground">
+                Vložiť <strong>{poseLabel(parsed.pose)}</strong> {parsed.side === "before" ? "pred" : "za"} snímku <strong>{parsed.frame}</strong>
+              </p>
+            ) : phase === "pick_pose" && parsed ? (
+              // frame and side known, pose unclear
+              <div className="space-y-2">
+                <p className="text-sm text-foreground">
+                  Snímka <strong>{parsed.frame}</strong>, {parsed.side === "before" ? "pred" : "za"}. Vyberte pózu:
+                </p>
+                <NativeSelect
+                  className="max-w-xs"
+                  value={pickedPose}
+                  onChange={(e) => setPickedPose(e.target.value)}
+                >
+                  <option value="" disabled>Póza…</option>
+                  {poses.map((p) => (
+                    <option key={p.name} value={p.name}>{poseLabel(p.name)}</option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : null
+          }
+          actions={
+            phase === "idle" && !listening ? (
+              <>
+                <Button size="sm" onClick={parseWithLLM}>Rozpoznať príkaz</Button>
+                <Button size="sm" variant="outline" onClick={reset}>Zrušiť</Button>
+              </>
+            ) : phase === "confirm" || phase === "pick_pose" ? (
+              <>
+                <Button size="sm" disabled={phase === "pick_pose" && !pickedPose} onClick={() => confirm(phase === "pick_pose" ? pickedPose : undefined)}>
+                  <Check className="h-3.5 w-3.5" />Potvrdiť
+                </Button>
+                <Button size="sm" variant="outline" onClick={reset}>Skúsiť znova</Button>
+              </>
+            ) : phase === "error" ? (
+              <Button size="sm" variant="outline" onClick={reset}>Skúsiť znova</Button>
+            ) : null
+          }
+        />
       )}
-
-      {/* confirm */}
-      {phase === "confirm" && parsed?.pose && (
-        <div className="space-y-2">
-          <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
-            Vložiť <strong>{POSE_DISPLAY_SK[parsed.pose] ?? parsed.pose}</strong> {parsed.side === "before" ? "pred" : "za"} snímku <strong>{parsed.frame}</strong>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1" onClick={() => confirm()}>Potvrdiť</Button>
-            <Button size="sm" variant="outline" className="flex-1" onClick={reset}>Skúsiť znova</Button>
-          </div>
-        </div>
-      )}
-
-      {/* error */}
-      {phase === "error" && (
-        <div className="space-y-2">
-          <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-            {errorMsg}
-          </div>
-          <Button size="sm" variant="outline" className="w-full" onClick={reset}>
-            Skúsiť znova
-          </Button>
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }

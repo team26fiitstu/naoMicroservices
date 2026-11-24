@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 # Load only the repository root file; container environment takes precedence.
 load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")))
 
+import math
 import uuid
 import json
 
@@ -31,6 +32,9 @@ POSE_API_URL = "http://%s:6001/media_pipe_pose/pose_from_image" % service_host("
 SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
 VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("naorobotapi")
 EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
+
+# name of unnamed exercise, Slovak UI
+DEFAULT_EXERCISE_NAME = "Nepomenované cvičenie"
 
 # Host directory mounted into pose container as /images
 POSE_HOST_ROOT = os.path.abspath(os.environ.get("POSE_IMAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "images")))
@@ -190,7 +194,7 @@ def exercise_from_image():
 
     Request (multipart/form-data):
         image: file
-        name:  string (default "Unnamed Exercise")
+        name:  string (default DEFAULT_EXERCISE_NAME)
 
     Response:
         201 JSON: exercise config
@@ -202,7 +206,7 @@ def exercise_from_image():
     if file.filename == "":
         return jsonify({"error": "empty filename"}), 400
 
-    name = request.form.get("name", "Unnamed Exercise")
+    name = request.form.get("name", DEFAULT_EXERCISE_NAME)
     ext = os.path.splitext(file.filename)[1] or ".jpg"
 
     try:
@@ -417,6 +421,22 @@ def exercise_run(exercise_id):
     }), 200
 
 
+def parse_time_range(form):
+    """Optional start/end form fields in seconds, end -1 means until end."""
+    try:
+        start = float(form.get("start", "0") or 0)
+        end = float(form.get("end", "-1") or -1)
+    except ValueError:
+        raise ValueError("start and end must be numbers (seconds)") from None
+    if not math.isfinite(start) or not math.isfinite(end):
+        raise ValueError("start and end must be finite numbers")
+    if start < 0:
+        raise ValueError("start must not be negative")
+    if end != -1 and end <= start:
+        raise ValueError("end must be greater than start")
+    return start, end
+
+
 @app.route("/exercise/from_video", methods=["POST"])
 def exercise_from_video():
     """
@@ -424,9 +444,11 @@ def exercise_from_video():
 
     Request (multipart/form-data):
         video:   file
-        name:    string (default "Unnamed Exercise")
+        name:    string (default DEFAULT_EXERCISE_NAME)
         fps:     int    (default 1)
         seconds: int    (default -1, full video)
+        start:   float  (default 0, range start in seconds)
+        end:     float  (default -1, range end, -1 = until end)
 
     Response:
         201 JSON: exercise config + frame_count
@@ -438,7 +460,7 @@ def exercise_from_video():
     if file.filename == "":
         return jsonify({"error": "empty filename"}), 400
 
-    name = request.form.get("name", "Unnamed Exercise")
+    name = request.form.get("name", DEFAULT_EXERCISE_NAME)
 
     try:
         fps = int(request.form.get("fps", "1"))
@@ -446,6 +468,11 @@ def exercise_from_video():
         max_frames = int(request.form.get("max_frames", "-1"))
     except ValueError:
         return jsonify({"error": "fps, seconds, and max_frames must be integers"}), 400
+
+    try:
+        start_seconds, end_seconds = parse_time_range(request.form)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     try:
         video_bytes = file.read()
@@ -464,6 +491,8 @@ def exercise_from_video():
             number_frames_per_sec=fps,
             number_seconds_to_process=seconds,
             attach_visualization=True,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
         )
     except requests.RequestException as e:
         return jsonify({"error": "failed to call skeletonfinderapi", "detail": str(e)}), 502

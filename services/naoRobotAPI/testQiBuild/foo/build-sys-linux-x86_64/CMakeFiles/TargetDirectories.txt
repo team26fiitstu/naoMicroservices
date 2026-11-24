@@ -1,8 +1,0 @@
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/install/local.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/install/strip.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/foo.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/edit_cache.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/rebuild_cache.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/test_foo.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/list_install_components.dir
-/robotics/naoRobotAPI/testQiBuild/foo/build-sys-linux-x86_64/CMakeFiles/install.dir
