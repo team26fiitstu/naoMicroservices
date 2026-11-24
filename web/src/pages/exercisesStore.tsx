@@ -58,7 +58,20 @@ export default function ExercisesStore() {
     setDeleting(id);
     try {
       const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 409) {
+          // The backend's "error" field is an English technical message; build
+          // a Slovak message from the structured "choreographies" list instead.
+          const body = await res.json().catch(() => null) as { choreographies?: { id: string; name: string }[] } | null;
+          const names = (body?.choreographies ?? []).map((c) => c.name).filter(Boolean);
+          throw new Error(
+            names.length > 0
+              ? `Cvičenie sa používa v choreografii: ${names.join(", ")}.`
+              : "Cvičenie sa používa v choreografii a nedá sa odstrániť.",
+          );
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
     } catch (err) {

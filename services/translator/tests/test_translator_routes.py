@@ -160,6 +160,43 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(result.status_code, 201)
         self.assertEqual(uploads, [b"png-bytes", b"png-bytes"])
 
+    def test_video_upload_leaves_no_temporary_frames_behind(self):
+        # process_video_bytes writes frame images into whatever output_dir it
+        # receives; the route must pass a temp dir that is removed afterwards,
+        # regardless of whether the upload succeeds.
+        captured_dirs = []
+
+        def fake_process_video_bytes(video_bytes, output_dir, **kwargs):
+            captured_dirs.append(output_dir)
+            image_path = os.path.join(output_dir, "frame_0000.png")
+            with open(image_path, "wb") as handle:
+                handle.write(b"png-bytes")
+            summary = dict(SUMMARY, valid_image_paths=[image_path])
+            return summary
+
+        with patch.object(translator, "process_video_bytes", side_effect=fake_process_video_bytes), \
+                patch.object(translator, "translate_arms", return_value=ANGLES), \
+                patch.object(translator, "call_exercise_create", return_value={"id": "ex1"}), \
+                patch.object(translator.requests, "post", return_value=response({}, 201)):
+            result = self.upload("/exercise/from_video", "video", name="demo")
+
+        self.assertEqual(result.status_code, 201)
+        self.assertEqual(len(captured_dirs), 1)
+        self.assertFalse(os.path.exists(captured_dirs[0]))
+        self.assertFalse(os.path.isdir(translator.VIDEO_FRAMES_ROOT) and any(
+            os.scandir(translator.VIDEO_FRAMES_ROOT)
+        ))
+
+        # a failed upload (no valid frames) must also clean up its temp dir
+        captured_dirs.clear()
+        with patch.object(translator, "process_video_bytes",
+                           side_effect=lambda video_bytes, output_dir, **kw: (
+                               captured_dirs.append(output_dir), dict(SUMMARY, valid_frames=0))[1]):
+            failed = self.upload("/exercise/from_video", "video", name="demo")
+        self.assertEqual(failed.status_code, 422)
+        self.assertEqual(len(captured_dirs), 1)
+        self.assertFalse(os.path.exists(captured_dirs[0]))
+
     def test_side_effect_calls_are_not_retried_on_timeouts_or_5xx(self):
         calls = (
             (translator.call_nao_set_pose, ([0.1] * 22,)),

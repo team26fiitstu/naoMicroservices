@@ -18,6 +18,7 @@ load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", 
 import math
 import uuid
 import json
+import tempfile
 
 from flask import Flask, request, jsonify
 import requests
@@ -480,76 +481,81 @@ def exercise_from_video():
         return jsonify({"error": "failed to read video", "detail": str(e)}), 500
 
     ext = os.path.splitext(file.filename)[1] or ".mp4"
-    upload_id = uuid.uuid4().hex
-    output_dir = os.path.join(VIDEO_FRAMES_ROOT, upload_id)
 
-    # 1) Get landmarks from skeletonfinderapi
-    try:
-        summary = process_video_bytes(
-            video_bytes=video_bytes,
-            output_dir=output_dir,
-            number_frames_per_sec=fps,
-            number_seconds_to_process=seconds,
-            attach_visualization=True,
-            start_seconds=start_seconds,
-            end_seconds=end_seconds,
-        )
-    except requests.RequestException as e:
-        return jsonify({"error": "failed to call skeletonfinderapi", "detail": str(e)}), 502
-    except Exception as e:
-        return jsonify({"error": "failed to process video", "detail": str(e)}), 500
-
-    if summary["valid_frames"] == 0:
-        return jsonify({"error": "no valid frames found in video"}), 422
-
-    # apply max_frames cap
-    if max_frames > 0:
-        summary["valid_landmarks"]   = summary["valid_landmarks"][:max_frames]
-        summary["valid_image_paths"] = summary["valid_image_paths"][:max_frames]
-        summary["valid_frames"]      = len(summary["valid_landmarks"])
-
-    # 2) Translate each frame landmarks → NAO angles
-    frames = []
-    for landmarks in summary["valid_landmarks"]:
+    # Frames extracted from the upload are only needed long enough to be
+    # translated and re-uploaded as part of the exercise; they are written to
+    # a process-local temporary directory that is removed on every exit path
+    # (success or error) so no copy is left outside the exercise's own
+    # directory in exerciseConfigService.
+    with tempfile.TemporaryDirectory(prefix="exercise-video-") as output_dir:
+        # 1) Get landmarks from skeletonfinderapi
         try:
-            result = translate_arms(landmarks)
-        except Exception as e:
-            return jsonify({"error": "failed to translate landmarks", "detail": str(e)}), 500
-        frames.append({
-            "keypoints": landmarks,
-            "nao_angles": result["angles"],
-        })
-
-    # 3) Save exercise in exerciseconfigservice
-    try:
-        config = call_exercise_create(
-            name=name,
-            frames=frames,
-            pose_engine="mediapipe",
-            media_bytes=video_bytes,
-            media_ext=ext,
-        )
-    except requests.RequestException as e:
-        return jsonify({"error": "failed to save exercise", "detail": str(e)}), 502
-
-    # 4) Upload frame images to exerciseconfigservice
-    exercise_id = config["id"]
-    for frame_index, img_path in enumerate(summary["valid_image_paths"]):
-        try:
-            # Read the bytes once: an open file object is consumed by the first
-            # attempt, so a retry would upload an empty image.
-            with open(img_path, "rb") as img_file:
-                image_bytes = img_file.read()
-            request_with_retries(
-                "POST",
-                f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frame/{frame_index}/image",
-                files={"image": ("frame.png", image_bytes, "image/png")},
-                timeout=10,
+            summary = process_video_bytes(
+                video_bytes=video_bytes,
+                output_dir=output_dir,
+                number_frames_per_sec=fps,
+                number_seconds_to_process=seconds,
+                attach_visualization=True,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
             )
-        except Exception:
-            pass  # images are best-effort, don't fail the whole request
+        except requests.RequestException as e:
+            return jsonify({"error": "failed to call skeletonfinderapi", "detail": str(e)}), 502
+        except Exception as e:
+            return jsonify({"error": "failed to process video", "detail": str(e)}), 500
 
-    return jsonify(config), 201
+        if summary["valid_frames"] == 0:
+            return jsonify({"error": "no valid frames found in video"}), 422
+
+        # apply max_frames cap
+        if max_frames > 0:
+            summary["valid_landmarks"]   = summary["valid_landmarks"][:max_frames]
+            summary["valid_image_paths"] = summary["valid_image_paths"][:max_frames]
+            summary["valid_frames"]      = len(summary["valid_landmarks"])
+
+        # 2) Translate each frame landmarks → NAO angles
+        frames = []
+        for landmarks in summary["valid_landmarks"]:
+            try:
+                result = translate_arms(landmarks)
+            except Exception as e:
+                return jsonify({"error": "failed to translate landmarks", "detail": str(e)}), 500
+            frames.append({
+                "keypoints": landmarks,
+                "nao_angles": result["angles"],
+            })
+
+        # 3) Save exercise in exerciseconfigservice
+        try:
+            config = call_exercise_create(
+                name=name,
+                frames=frames,
+                pose_engine="mediapipe",
+                media_bytes=video_bytes,
+                media_ext=ext,
+            )
+        except requests.RequestException as e:
+            return jsonify({"error": "failed to save exercise", "detail": str(e)}), 502
+
+        # 4) Upload frame images to exerciseconfigservice (while the temporary
+        #    frame directory still exists)
+        exercise_id = config["id"]
+        for frame_index, img_path in enumerate(summary["valid_image_paths"]):
+            try:
+                # Read the bytes once: an open file object is consumed by the first
+                # attempt, so a retry would upload an empty image.
+                with open(img_path, "rb") as img_file:
+                    image_bytes = img_file.read()
+                request_with_retries(
+                    "POST",
+                    f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frame/{frame_index}/image",
+                    files={"image": ("frame.png", image_bytes, "image/png")},
+                    timeout=10,
+                )
+            except Exception:
+                pass  # images are best-effort, don't fail the whole request
+
+        return jsonify(config), 201
 
 
 @app.route("/arms/from_video", methods=["POST"])

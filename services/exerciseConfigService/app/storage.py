@@ -12,12 +12,15 @@ Directory layout on disk (EXERCISES_DIR = /service/exercises in container):
   │       ├── frame_000.json     ← one file per frame
   │       ├── frame_001.json
   │       └── frame_002.json
-  └── b7e2a091/
-      ├── config.json
-      ├── media/
-      │   └── original.jpg
-      └── frames/
-          └── frame_000.json
+  ├── b7e2a091/
+  │   ├── config.json
+  │   ├── media/
+  │   │   └── original.jpg
+  │   └── frames/
+  │       └── frame_000.json
+  └── _choreographies/           ← choreographies (graphs of states), see
+      ├── c1d2e3f4.json             app/choreography.py. No config.json here,
+      └── b7e2a091.json             so it is ignored by list_exercises().
 
 config.json structure:
   {
@@ -54,7 +57,7 @@ import os
 import json
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Read from environment — set in docker-compose
 EXERCISES_DIR = os.environ.get("EXERCISES_DIR", "/service/exercises")
@@ -162,7 +165,7 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
     config = {
         "id": exercise_id,
         "name": name,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "pose_engine": pose_engine,
         "repetitions": 1,
         "frame_sequence": list(range(len(frames))),
