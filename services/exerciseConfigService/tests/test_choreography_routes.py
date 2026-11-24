@@ -128,6 +128,18 @@ class ChoreographyRoutes(OfflineCase):
                 base_doc["states"][1],
             ]},
             "empty states": {**base_doc, "states": []},
+            "path-traversal state_id": {**base_doc, "states": [
+                {"state_id": "../outside", "label": "Escape", "x": 0, "y": 0},
+                base_doc["states"][1],
+            ]},
+            "non-finite x (NaN)": {**base_doc, "states": [
+                {"state_id": state_a, "label": "Pohyb 1", "x": float("nan"), "y": 0},
+                base_doc["states"][1],
+            ]},
+            "non-finite y (Infinity)": {**base_doc, "states": [
+                {"state_id": state_a, "label": "Pohyb 1", "x": 0, "y": float("inf")},
+                base_doc["states"][1],
+            ]},
         }
         for description, doc in invalid_docs.items():
             with self.subTest(description=description):
@@ -154,6 +166,50 @@ class ChoreographyRoutes(OfflineCase):
                     self.client.put(f"/choreography/{choreography_id}", json={}).status_code, 404,
                 )
                 self.assertEqual(self.client.delete(f"/choreography/{choreography_id}").status_code, 404)
+
+    def test_create_ignores_unknown_fields(self):
+        state_a = self.create_exercise("Pohyb 1")
+        state_b = self.create_exercise("Pohyb 2")
+        doc = {**self.make_doc(state_a, state_b), "extra_field": "should not be stored", "id": "ignored"}
+
+        created = self.client.post("/choreography/create", json=doc).json
+        self.assertNotIn("extra_field", created)
+        self.assertNotEqual(created["id"], "ignored")
+
+        on_disk = (self.root / "_choreographies" / f"{created['id']}.json").read_text()
+        self.assertNotIn("extra_field", on_disk)
+
+    def test_malformed_document_in_choreographies_dir_does_not_break_listing_or_delete(self):
+        state_a = self.create_exercise("Pohyb 1")
+        state_b = self.create_exercise("Pohyb 2")
+        self.client.post("/choreography/create", json=self.make_doc(state_a, state_b))
+
+        choreographies_dir = self.root / "_choreographies"
+        # Simulate a manually edited file that is valid JSON but not an object.
+        (choreographies_dir / "broken.json").write_text("[1, 2, 3]")
+
+        listed = self.client.get("/choreography/list")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.json), 1)
+
+        health = self.client.get("/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json["choreography_count"], 1)
+
+        # an exercise not referenced by the broken file must still be deletable
+        unused = self.create_exercise("Unused")
+        self.assertEqual(self.client.delete(f"/exercise/{unused}").status_code, 200)
+
+    def test_self_loop_transition_is_allowed(self):
+        # Design confirmation (SCRUM-90): a transition may connect a state to
+        # itself, e.g. "retry this pose".
+        state_a = self.create_exercise("Pohyb 1")
+        state_b = self.create_exercise("Pohyb 2")
+        doc = self.make_doc(state_a, state_b)
+        doc["transitions"].append({"id": "t2", "from": state_a, "to": state_a, "label": "Retry"})
+
+        result = self.client.post("/choreography/create", json=doc)
+        self.assertEqual(result.status_code, 201)
 
     def test_deleting_exercise_used_in_choreography_is_rejected(self):
         state_a = self.create_exercise("Pohyb 1")

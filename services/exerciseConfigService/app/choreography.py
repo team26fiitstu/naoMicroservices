@@ -33,16 +33,25 @@ Choreography document:
 
 import os
 import re
+import math
 import json
 import uuid
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app import storage
 
 CHOREOGRAPHIES_DIRNAME = "_choreographies"
 
-_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+# Exercise ids and choreography ids are both uuid4().hex[:8]: 8 lowercase hex
+# characters. Validating the format (rather than only checking existence on
+# disk) also blocks path-traversal values such as "../outside" from ever
+# reaching os.path.join()-based lookups.
+_HASH_RE = re.compile(r"^[0-9a-f]{8}$")
+
+
+def is_valid_hash(value) -> bool:
+    return isinstance(value, str) and bool(_HASH_RE.match(value))
 
 
 # =============================================================================
@@ -58,11 +67,15 @@ def choreography_path(choreography_id: str) -> str:
 
 
 def is_valid_id(choreography_id) -> bool:
-    return isinstance(choreography_id, str) and bool(_ID_RE.match(choreography_id))
+    return is_valid_hash(choreography_id)
 
 
 def choreography_exists(choreography_id: str) -> bool:
     return is_valid_id(choreography_id) and os.path.isfile(choreography_path(choreography_id))
+
+
+def _utcnow_isoformat() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # =============================================================================
@@ -72,6 +85,33 @@ def choreography_exists(choreography_id: str) -> bool:
 def _read_json(path: str):
     with open(path, "r") as f:
         return json.load(f)
+
+
+def _iter_choreography_documents():
+    """
+    Yield every valid choreography document stored on disk.
+
+    Shared by list_choreographies(), choreographies_using() and health()'s
+    choreography count, so all three agree on what counts as a stored
+    choreography: a *.json file in _choreographies/ whose content is a JSON
+    object. A file that is valid JSON but not an object (e.g. after a manual
+    edit) is skipped rather than raising, so a single bad file cannot break
+    listing, usage lookups or the health check.
+    """
+    directory = choreographies_dir()
+    if not os.path.isdir(directory):
+        return
+
+    for entry in os.scandir(directory):
+        if not entry.is_file() or not entry.name.endswith(".json"):
+            continue
+        try:
+            doc = _read_json(entry.path)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        yield entry, doc
 
 
 def _write_json_atomic(path: str, data) -> None:
@@ -92,8 +132,16 @@ def _write_json_atomic(path: str, data) -> None:
 # Validation
 # =============================================================================
 
-def _is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def _is_finite_number(value) -> bool:
+    """True for plain ints/floats, excluding bool, NaN and +/-Infinity.
+
+    NaN/Infinity would pass isinstance(value, (int, float)) but are not
+    valid JSON literals, so a browser cannot parse the stored document
+    back; they must be rejected here instead of only checking the type.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
 
 
 def validate_choreography(doc) -> list:
@@ -129,8 +177,8 @@ def validate_choreography(doc) -> list:
         x = state.get("x")
         y = state.get("y")
 
-        if not isinstance(state_id, str) or not state_id:
-            errors.append(f"states[{index}].state_id is required and must be a string")
+        if not is_valid_hash(state_id):
+            errors.append(f"states[{index}].state_id is required and must be an 8-character hex exercise id")
         else:
             if state_id in state_ids:
                 errors.append(f"duplicate state_id '{state_id}'")
@@ -140,10 +188,10 @@ def validate_choreography(doc) -> list:
 
         if not isinstance(label, str) or not label:
             errors.append(f"states[{index}].label is required and must be a string")
-        if not _is_number(x):
-            errors.append(f"states[{index}].x must be a number")
-        if not _is_number(y):
-            errors.append(f"states[{index}].y must be a number")
+        if not _is_finite_number(x):
+            errors.append(f"states[{index}].x must be a finite number")
+        if not _is_finite_number(y):
+            errors.append(f"states[{index}].y must be a finite number")
 
     initial_state = doc.get("initial_state")
     if not isinstance(initial_state, str) or not initial_state:
@@ -187,12 +235,26 @@ def validate_choreography(doc) -> list:
 # CRUD operations
 # =============================================================================
 
+def _sanitize_doc(doc: dict) -> dict:
+    """
+    Keep only the fields that make up a choreography document. The request
+    body is otherwise stored as-is, so unknown/extra fields sent by a client
+    would end up persisted in the file; this keeps stored documents clean.
+    """
+    return {
+        "name": doc.get("name"),
+        "initial_state": doc.get("initial_state"),
+        "states": doc.get("states"),
+        "transitions": doc.get("transitions", []),
+    }
+
+
 def create_choreography(doc: dict) -> dict:
     """Create a new choreography. Caller must validate `doc` beforehand."""
     choreography_id = uuid.uuid4().hex[:8]
-    now = datetime.utcnow().isoformat()
+    now = _utcnow_isoformat()
 
-    stored = dict(doc)
+    stored = _sanitize_doc(doc)
     stored["schema_version"] = 1
     stored["id"] = choreography_id
     stored["created_at"] = now
@@ -215,11 +277,11 @@ def replace_choreography(choreography_id: str, doc: dict) -> dict:
 
     existing = _read_json(choreography_path(choreography_id))
 
-    stored = dict(doc)
+    stored = _sanitize_doc(doc)
     stored["schema_version"] = 1
     stored["id"] = choreography_id
-    stored["created_at"] = existing.get("created_at", datetime.utcnow().isoformat())
-    stored["updated_at"] = datetime.utcnow().isoformat()
+    stored["created_at"] = existing.get("created_at", _utcnow_isoformat())
+    stored["updated_at"] = _utcnow_isoformat()
 
     _write_json_atomic(choreography_path(choreography_id), stored)
     return stored
@@ -233,25 +295,17 @@ def delete_choreography(choreography_id: str) -> None:
 
 def list_choreographies() -> list:
     """Return a summary list: [{id, name, state_count, created_at, updated_at}]"""
-    directory = choreographies_dir()
-    if not os.path.isdir(directory):
-        return []
-
     result = []
-    for entry in os.scandir(directory):
-        if not entry.is_file() or not entry.name.endswith(".json"):
+    for entry, doc in _iter_choreography_documents():
+        if "id" not in doc:
             continue
-        try:
-            doc = _read_json(entry.path)
-            result.append({
-                "id": doc["id"],
-                "name": doc.get("name", ""),
-                "state_count": len(doc.get("states", [])),
-                "created_at": doc.get("created_at", ""),
-                "updated_at": doc.get("updated_at", ""),
-            })
-        except (json.JSONDecodeError, KeyError):
-            continue
+        result.append({
+            "id": doc["id"],
+            "name": doc.get("name", ""),
+            "state_count": len(doc.get("states", [])),
+            "created_at": doc.get("created_at", ""),
+            "updated_at": doc.get("updated_at", ""),
+        })
 
     result.sort(key=lambda x: x["updated_at"], reverse=True)
     return result
@@ -259,18 +313,8 @@ def list_choreographies() -> list:
 
 def choreographies_using(exercise_id: str) -> list:
     """Return [{id, name}] for every choreography that references exercise_id as a state."""
-    directory = choreographies_dir()
-    if not os.path.isdir(directory):
-        return []
-
     result = []
-    for entry in os.scandir(directory):
-        if not entry.is_file() or not entry.name.endswith(".json"):
-            continue
-        try:
-            doc = _read_json(entry.path)
-        except (json.JSONDecodeError, KeyError):
-            continue
+    for entry, doc in _iter_choreography_documents():
         state_ids = {
             state.get("state_id")
             for state in doc.get("states", [])
@@ -280,3 +324,8 @@ def choreographies_using(exercise_id: str) -> list:
             result.append({"id": doc.get("id", entry.name[:-5]), "name": doc.get("name", "")})
 
     return result
+
+
+def choreography_count() -> int:
+    """Number of valid choreography documents stored on disk (used by /health)."""
+    return sum(1 for _ in _iter_choreography_documents())

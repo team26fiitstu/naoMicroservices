@@ -58,7 +58,10 @@ export default function ExercisesStore() {
     setDeleting(id);
     try {
       const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
     } catch (err) {

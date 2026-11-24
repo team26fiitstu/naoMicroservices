@@ -57,7 +57,7 @@ import os
 import json
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Read from environment — set in docker-compose
 EXERCISES_DIR = os.environ.get("EXERCISES_DIR", "/service/exercises")
@@ -165,7 +165,7 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
     config = {
         "id": exercise_id,
         "name": name,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "pose_engine": pose_engine,
         "repetitions": 1,
         "frame_sequence": list(range(len(frames))),
