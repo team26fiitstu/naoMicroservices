@@ -179,6 +179,23 @@ class ChoreographyRoutes(OfflineCase):
         on_disk = (self.root / "_choreographies" / f"{created['id']}.json").read_text()
         self.assertNotIn("extra_field", on_disk)
 
+    def test_create_ignores_unknown_fields_inside_states_and_transitions(self):
+        # Unknown fields must be stripped at every level, not only at the top
+        # of the document.
+        state_a = self.create_exercise("Pohyb 1")
+        state_b = self.create_exercise("Pohyb 2")
+        doc = self.make_doc(state_a, state_b)
+        doc["states"][0]["extra_state_field"] = "should not be stored"
+        doc["transitions"][0]["extra_transition_field"] = "should not be stored"
+
+        created = self.client.post("/choreography/create", json=doc).json
+        self.assertNotIn("extra_state_field", created["states"][0])
+        self.assertNotIn("extra_transition_field", created["transitions"][0])
+
+        on_disk = (self.root / "_choreographies" / f"{created['id']}.json").read_text()
+        self.assertNotIn("extra_state_field", on_disk)
+        self.assertNotIn("extra_transition_field", on_disk)
+
     def test_malformed_document_in_choreographies_dir_does_not_break_listing_or_delete(self):
         state_a = self.create_exercise("Pohyb 1")
         state_b = self.create_exercise("Pohyb 2")

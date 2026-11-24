@@ -235,17 +235,45 @@ def validate_choreography(doc) -> list:
 # CRUD operations
 # =============================================================================
 
+def _sanitize_state(state) -> dict:
+    """Keep only state_id, label, x, y from a single state entry."""
+    if not isinstance(state, dict):
+        return state
+    return {
+        "state_id": state.get("state_id"),
+        "label": state.get("label"),
+        "x": state.get("x"),
+        "y": state.get("y"),
+    }
+
+
+def _sanitize_transition(transition) -> dict:
+    """Keep only id, from, to, label from a single transition entry."""
+    if not isinstance(transition, dict):
+        return transition
+    return {
+        "id": transition.get("id"),
+        "from": transition.get("from"),
+        "to": transition.get("to"),
+        "label": transition.get("label"),
+    }
+
+
 def _sanitize_doc(doc: dict) -> dict:
     """
-    Keep only the fields that make up a choreography document. The request
-    body is otherwise stored as-is, so unknown/extra fields sent by a client
-    would end up persisted in the file; this keeps stored documents clean.
+    Keep only the fields that make up a choreography document, at every
+    level (the document itself, and each state/transition entry). The
+    request body is otherwise stored as-is, so unknown/extra fields sent
+    by a client would end up persisted in the file; this keeps stored
+    documents clean.
     """
+    states = doc.get("states")
+    transitions = doc.get("transitions", [])
     return {
         "name": doc.get("name"),
         "initial_state": doc.get("initial_state"),
-        "states": doc.get("states"),
-        "transitions": doc.get("transitions", []),
+        "states": [_sanitize_state(s) for s in states] if isinstance(states, list) else states,
+        "transitions": [_sanitize_transition(t) for t in transitions] if isinstance(transitions, list) else transitions,
     }
 
 
