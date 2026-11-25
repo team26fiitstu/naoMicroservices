@@ -1,4 +1,4 @@
-import ExerciseEditor from "@/components/exercise/exerciseEditor";
+import ExerciseEditor from "@/components/editor/exerciseEditor";
 
 export default function EditorPage() {
   return <ExerciseEditor />;
