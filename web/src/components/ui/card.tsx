@@ -72,16 +72,6 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardPerson({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-person"
-      className={cn("px-6", className)}
-      {...props}
-    />
-  )
-}
-
 function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -100,5 +90,4 @@ export {
   CardAction,
   CardDescription,
   CardContent,
-  CardPerson,
 }

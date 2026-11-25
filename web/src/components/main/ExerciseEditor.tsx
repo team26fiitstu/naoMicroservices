@@ -67,6 +67,21 @@ type Frame = {
   pose_name?: string;
 };
 
+// Frame as returned by server, field names differ between versions
+type RawFrame = {
+  idx?: number;
+  index?: number;
+  frame_index?: number;
+  joint_values?: Record<string, number>;
+  angles?: Record<string, number>;
+  joints?: Record<string, number>;
+  joint_angles?: Record<string, number>;
+  keypoints?: Record<string, unknown> & { pose_name?: string };
+  nao_angles?: number[];
+  pose_name?: string;
+  poseName?: string;
+};
+
 type PoseCommand = {
   name: string;
 };
@@ -229,15 +244,15 @@ export default function ExerciseEditor() {
         "HeadYaw","HeadPitch",
       ];
 
-      const raw: any[] = Array.isArray(data) ? data : data.frames ?? [];
-      const normalised: Frame[] = raw.map((f: any, i: number) => {
+      const raw: RawFrame[] = Array.isArray(data) ? data : data.frames ?? [];
+      const normalised: Frame[] = raw.map((f, i) => {
         const idx = f.idx ?? f.index ?? f.frame_index ?? i;
         let angles: Record<string, number> =
           f.joint_values ?? f.angles ?? f.joints ?? f.joint_angles ?? {};
         // fallback: build from nao_angles array if angles still empty
         if (Object.keys(angles).length === 0 && Array.isArray(f.nao_angles)) {
           angles = Object.fromEntries(
-            (f.nao_angles as number[]).map((v, j) => [NAO_JOINT_NAMES[j] ?? `j${j}`, v])
+            f.nao_angles.map((v, j) => [NAO_JOINT_NAMES[j] ?? `j${j}`, v])
           );
         }
         return {
