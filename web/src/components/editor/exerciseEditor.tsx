@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/emptyState";
+import { LoadingState } from "@/components/ui/loadingState";
 import { StatusAlert } from "@/components/ui/statusAlert";
-import { PageHeader } from "@/components/layout/pageHeader";
+import { Page } from "@/components/layout/page";
 import { EditorActions } from "@/components/editor/editorActions";
 import { ExerciseInfo } from "@/components/editor/exerciseInfo";
 import { FrameList } from "@/components/editor/frameList";
@@ -21,22 +21,20 @@ export default function ExerciseEditor() {
   const { exerciseId, frames, loadingFrames } = editor;
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-6">
-      <PageHeader
-        title="Editor"
-        description="Nahrajte video, upravte snímky, spustite na robotovi."
-        actions={exerciseId && (
-          <EditorActions
-            hasFrames={frames.length > 0}
-            voiceEditOpen={voiceEditOpen}
-            running={editor.running}
-            onReset={editor.reset}
-            onToggleVoiceEdit={() => setVoiceEditOpen((open) => !open)}
-            onRun={editor.run}
-          />
-        )}
-      />
-
+    <Page
+      title="Editor"
+      description="Nahrajte video, upravte snímky, spustite na robotovi."
+      actions={exerciseId && (
+        <EditorActions
+          hasFrames={frames.length > 0}
+          voiceEditOpen={voiceEditOpen}
+          running={editor.running}
+          onReset={editor.reset}
+          onToggleVoiceEdit={() => setVoiceEditOpen((open) => !open)}
+          onRun={editor.run}
+        />
+      )}
+    >
       <StatusAlert status={editor.status} />
 
       {voiceEditOpen && exerciseId && (
@@ -70,14 +68,7 @@ export default function ExerciseEditor() {
         />
       )}
 
-      {loadingFrames && (
-        <Card className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-8 w-8 text-primary animate-spin" />
-            <p className="text-sm text-muted-foreground">Načítavam snímky…</p>
-          </div>
-        </Card>
-      )}
+      {loadingFrames && <LoadingState text="Načítavam snímky…" />}
 
       {!loadingFrames && exerciseId && frames.length > 0 && (
         <FrameList
@@ -94,14 +85,11 @@ export default function ExerciseEditor() {
       )}
 
       {!loadingFrames && exerciseId && frames.length === 0 && (
-        <Card className="flex flex-col items-center justify-center py-16 gap-3">
-          <Film className="h-8 w-8 text-muted-foreground opacity-40" />
-          <p className="text-sm text-muted-foreground">Nenašli sa žiadne snímky.</p>
-          <Button variant="outline" size="sm" onClick={() => editor.loadFrames(exerciseId)}>
-            Skúsiť znova
-          </Button>
-        </Card>
+        <EmptyState
+          text="Nenašli sa žiadne snímky."
+          action={<Button variant="outline" size="sm" onClick={() => editor.loadFrames(exerciseId)}>Skúsiť znova</Button>}
+        />
       )}
-    </div>
+    </Page>
   );
 }

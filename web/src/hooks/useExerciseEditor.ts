@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
 import { failureText } from "@/lib/errors";
+import { runExercise, updateExercise } from "@/lib/exercises";
 import { pluralSk } from "@/lib/plural";
 import { poseLabel, type PoseCommand } from "@/lib/poses";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
@@ -40,7 +41,7 @@ export function useExerciseEditor(initialId: string | null) {
       const desc = text?.trim();
       if (desc) {
         setDescription(desc);
-        await api(`/exercise/${id}/config`, { method: "PUT", json: { description: desc } });
+        await updateExercise(id, { description: desc });
       }
     } catch {
       // best-effort, errors not shown
@@ -60,7 +61,7 @@ export function useExerciseEditor(initialId: string | null) {
       const kcal = Number(estimate);
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
-        await api(`/exercise/${id}/config`, { method: "PUT", json: { calories: kcal } });
+        await updateExercise(id, { calories: kcal });
       }
     } catch {
       // best-effort, errors not shown
@@ -199,21 +200,20 @@ export function useExerciseEditor(initialId: string | null) {
   const rename = useCallback(async (name: string) => {
     if (!exerciseId || !name.trim()) return false;
     try {
-      await api(`/exercise/${exerciseId}/config`, { method: "PUT", json: { name: name.trim() } });
+      await updateExercise(exerciseId, { name: name.trim() });
       setExerciseName(name.trim());
       return true;
-    } catch {
-      showStatus("error", "Premenovanie zlyhalo.");
+    } catch (err) {
+      showStatus("error", failureText("Premenovanie zlyhalo", err));
       return false;
     }
   }, [exerciseId, showStatus]);
 
-  // no body, repetitions from exercise config
   const run = useCallback(async () => {
     if (!exerciseId) return;
     setRunning(true);
     try {
-      await api(`/exercise/${exerciseId}/run`, { method: "POST" });
+      await runExercise(exerciseId);
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch (err) {
       showStatus("error", failureText("Spustenie zlyhalo", err));
