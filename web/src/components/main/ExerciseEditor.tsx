@@ -25,7 +25,7 @@ import { MicButton } from "@/components/ui/micButton";
 import { AiBadge } from "@/components/ui/aiBadge";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { ConfirmDialog } from "@/components/ui/confirmDialog";
-import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
+import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
 import { API_BASE } from "@/lib/api";
 import {
   NO_VOICE_TEXT,
@@ -86,6 +86,22 @@ type PoseCommand = {
   name: string;
 };
 
+
+// Joint range of motion over all frames, prompt input for LLM
+function motionSummary(frames: Frame[]) {
+  const ranges: Record<string, { min: number; max: number }> = {};
+  for (const frame of frames) {
+    for (const [joint, value] of Object.entries(frame.angles)) {
+      const range = ranges[joint] ??= { min: value, max: value };
+      range.min = Math.min(range.min, value);
+      range.max = Math.max(range.max, value);
+    }
+  }
+  const joints = Object.entries(ranges)
+    .map(([joint, { min, max }]) => `${joint}: ${(max - min).toFixed(2)} rad`)
+    .join(", ");
+  return `Exercise has ${frames.length} keyframes. Joint range-of-motion: ${joints}.`;
+}
 
 // ── drag-reorder hook ─────────────────────────────────────────────
 function useDragReorder<T>(
@@ -297,42 +313,11 @@ export default function ExerciseEditor() {
     if (!frameList.length || !LLM_AVAILABLE) return;
     setDescLoading(true);
     try {
-      const jointRanges: Record<string, { min: number; max: number }> = {};
-      for (const frame of frameList) {
-        for (const [joint, val] of Object.entries(frame.angles)) {
-          if (!jointRanges[joint]) jointRanges[joint] = { min: val, max: val };
-          else {
-            jointRanges[joint].min = Math.min(jointRanges[joint].min, val);
-            jointRanges[joint].max = Math.max(jointRanges[joint].max, val);
-          }
-        }
-      }
-      const romSummary = Object.entries(jointRanges)
-        .map(([j, { min, max }]) => `${j}: ${(max - min).toFixed(2)} rad`)
-        .join(", ");
-
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, write a short 1–2 sentence description in Slovak of what the exercise looks like and which body parts it involves. Return ONLY a JSON object: {"description": "<text>"}. Be concise and natural.`,
-            },
-            {
-              role: "user",
-              content: `Exercise has ${frameList.length} keyframes. Joint range-of-motion: ${romSummary}.`,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-      const desc = parsed.description?.trim();
+      const { description: text } = await askLlm<{ description: string }>(
+        `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, write a short 1–2 sentence description in Slovak of what the exercise looks like and which body parts it involves. Return ONLY a JSON object: {"description": "<text>"}. Be concise and natural.`,
+        motionSummary(frameList),
+      );
+      const desc = text?.trim();
       if (desc) {
         setDescription(desc);
         await fetch(`${API_BASE}/exercise/${id}/config`, {
@@ -439,43 +424,11 @@ export default function ExerciseEditor() {
     if (!frameList.length || !LLM_AVAILABLE) return;
     setCaloriesLoading(true);
     try {
-      // summarise range-of-motion per joint across all frames
-      const jointRanges: Record<string, { min: number; max: number }> = {};
-      for (const frame of frameList) {
-        for (const [joint, val] of Object.entries(frame.angles)) {
-          if (!jointRanges[joint]) jointRanges[joint] = { min: val, max: val };
-          else {
-            jointRanges[joint].min = Math.min(jointRanges[joint].min, val);
-            jointRanges[joint].max = Math.max(jointRanges[joint].max, val);
-          }
-        }
-      }
-      const romSummary = Object.entries(jointRanges)
-        .map(([j, { min, max }]) => `${j}: ${(max - min).toFixed(2)} rad`)
-        .join(", ");
-
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, estimate the calories a person would burn performing this exercise once. Return ONLY a JSON object: {"calories": <number>}. Round to one decimal place.`,
-            },
-            {
-              role: "user",
-              content: `Exercise has ${frameList.length} keyframes. Joint range-of-motion: ${romSummary}.`,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-      const kcal = Number(parsed.calories);
+      const { calories: estimate } = await askLlm<{ calories: number }>(
+        `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, estimate the calories a person would burn performing this exercise once. Return ONLY a JSON object: {"calories": <number>}. Round to one decimal place.`,
+        motionSummary(frameList),
+      );
+      const kcal = Number(estimate);
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
         // persist to backend
@@ -1187,16 +1140,8 @@ function VoiceEditPanel({ poses, frameCount, onInsert, onClose }: VoiceEditPanel
 
     const poseList = poses.map((p) => p.name).join(", ");
     try {
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a voice command parser for an exercise frame editor. The user speaks Slovak (or mixed Slovak/English). They have ${frameCount} frames numbered 1 to ${frameCount}.
+      const cmd = await askLlm<{ pose: string | null; frame: number | null; side: "before" | "after" | null }>(
+        `You are a voice command parser for an exercise frame editor. The user speaks Slovak (or mixed Slovak/English). They have ${frameCount} frames numbered 1 to ${frameCount}.
 
 Valid pose keys: [${poseList}].
 Slovak→key hints: drep→crouch, úklon→bow, zamávaj/zamávajte→wave, stoj→stand, sed/sadni→sit, ruky hore→hands_up, t póza/t-póza/tpóza/tipos/depóza/te póza/tpose→t_pose, ukáž vpravo→point_right, ukáž vľavo→point_left.
@@ -1208,14 +1153,8 @@ Return ONLY a JSON object with these fields:
 - "side": "before" or "after", or null if not mentioned
 
 No other text, only JSON.`,
-            },
-            { role: "user", content: transcript },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const cmd = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+        transcript,
+      );
       if (!cmd.frame || !cmd.side) throw new Error("no frame/side");
       const poseKey = cmd.pose && poses.some((p) => p.name === cmd.pose) ? cmd.pose : null;
       applyParsed({ pose: poseKey, frame: Number(cmd.frame), side: cmd.side === "before" ? "before" : "after" });
