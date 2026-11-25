@@ -19,6 +19,8 @@ import math
 import uuid
 import json
 import tempfile
+import re
+import threading
 
 from flask import Flask, request, jsonify
 import requests
@@ -128,6 +130,79 @@ def call_nao_voice_lines(voice_lines_configs):
                               max_attempts=1)  # a repeated voice line is audible: never retry
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_exercise(exercise_id, repetitions_override=None):
+    """Return stored playback frames and repetition count, or an HTTP error tuple."""
+    try:
+        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+        if resp.status_code == 404:
+            return None, (jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404)
+        resp.raise_for_status()
+        frames = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        return None, (jsonify({"error": "failed to fetch frames", "detail": str(exc)}), 502)
+    if not isinstance(frames, list):
+        return None, (jsonify({"error": "invalid exercise frames"}), 502)
+    if not frames:
+        return None, (jsonify({"error": "exercise has no frames"}), 422)
+    if any(not isinstance(frame, dict) for frame in frames):
+        return None, (jsonify({"error": "invalid exercise frames"}), 502)
+
+    repetitions = repetitions_override
+    if repetitions is None:
+        try:
+            resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+            if resp.status_code == 404:
+                return None, (jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404)
+            resp.raise_for_status()
+            repetitions = resp.json().get("repetitions", 1)
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            return None, (jsonify({"error": "failed to fetch exercise config", "detail": str(exc)}), 502)
+    try:
+        repetitions = int(repetitions)
+        if repetitions < 1:
+            raise ValueError
+    except (ValueError, TypeError):
+        return None, (jsonify({"error": "repetitions must be a positive integer"}), 400)
+    return (frames, repetitions), None
+
+
+def play_exercise(exercise_id, repetitions_override=None, stop_on_error=False,
+                  legacy_results=False):
+    fetched, error = fetch_exercise(exercise_id, repetitions_override)
+    if error:
+        return None, error
+    frames, repetitions = fetched
+    results = []
+    for rep in range(repetitions):
+        for frame in frames:
+            for kind, payload, sender in (
+                ("voice", frame.get("voice_lines"), call_nao_voice_lines),
+                ("pose", frame.get("nao_angles", []), call_nao_set_pose),
+            ):
+                if kind == "voice" and not payload:
+                    continue
+                item = {"rep": rep, "type": kind, "frame_index": frame.get("frame_index")}
+                try:
+                    robot_result = sender(payload)
+                    if not isinstance(robot_result, dict) or robot_result.get("success") is not True:
+                        raise RuntimeError("robot did not confirm success")
+                    item["status"] = "ok"
+                    if legacy_results and kind == "voice":
+                        # Keep the historical /exercise/<id>/run result shape.
+                        item["type"] = "pose"
+                except (requests.RequestException, RuntimeError) as exc:
+                    item.update(status="error", detail=str(exc))
+                results.append(item)
+                if stop_on_error and item["status"] == "error":
+                    return playback_result(exercise_id, repetitions, frames, results), None
+    return playback_result(exercise_id, repetitions, frames, results), None
+
+
+def playback_result(exercise_id, repetitions, frames, results):
+    return {"exercise_id": exercise_id, "repetitions": repetitions,
+            "frames_per_rep": len(frames), "total_poses_sent": len(results), "results": results}
     
 
 # =========================
@@ -365,61 +440,173 @@ def exercise_run(exercise_id):
         200 JSON: {exercise_id, repetitions, frames_per_rep, total_poses_sent, results[]}
     """
     data = request.get_json(silent=True) or {}
+    with _robot_playback_lock:
+        result, error = play_exercise(exercise_id, data.get("repetitions"),
+                                      legacy_results=True)
+    return error if error else (jsonify(result), 200)
 
-    # 1) Fetch frames from exerciseconfigservice
+
+# One run per choreography in this translator process. A nonblocking lock per ID
+# rejects concurrent commands instead of queueing a stale signal behind playback.
+_runs = {}
+# Entries exist only while a request is using or waiting to acquire that ID.
+# [lock, number of request handlers referencing the entry]
+_run_locks = {}
+_run_registry_lock = threading.Lock()
+_robot_playback_lock = threading.Lock()
+_choreography_id_re = re.compile(r"^[0-9a-f]{8}$")
+
+
+def _run_response(choreography_id, operation):
+    if not _choreography_id_re.fullmatch(choreography_id):
+        return jsonify({"error": "choreography_id must be an 8-character lowercase hex ID"}), 400
+    with _run_registry_lock:
+        entry = _run_locks.setdefault(choreography_id, [threading.Lock(), 0])
+        entry[1] += 1
+    acquired = entry[0].acquire(blocking=False)
     try:
-        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+        if not acquired:
+            return jsonify({"error": "choreography run is busy"}), 409
+        return operation(choreography_id)
+    finally:
+        if acquired:
+            entry[0].release()
+        with _run_registry_lock:
+            entry[1] -= 1
+            if entry[1] == 0:
+                del _run_locks[choreography_id]
+
+
+def _active_run(choreography_id):
+    run = _runs.get(choreography_id)
+    if run is None:
+        return None, (jsonify({"error": "no active choreography run"}), 409)
+    return run, None
+
+
+def _snapshot(choreography_id, run):
+    return {"choreography_id": choreography_id, "state_id": run["state_id"], "active": True}
+
+
+def _load_graph(choreography_id):
+    try:
+        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/choreography/{choreography_id}", timeout=10)
         if resp.status_code == 404:
-            return jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404
+            return None, (jsonify({"error": f"Choreography '{choreography_id}' not found"}), 404)
         resp.raise_for_status()
-        frames = resp.json()
-    except requests.RequestException as e:
-        return jsonify({"error": "failed to fetch frames", "detail": str(e)}), 502
+        graph = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        return None, (jsonify({"error": "failed to fetch choreography", "detail": str(exc)}), 502)
+    if not isinstance(graph, dict) or graph.get("schema_version") != 1 or graph.get("id") != choreography_id:
+        return None, (jsonify({"error": "invalid choreography document"}), 502)
+    states = graph.get("states")
+    transitions = graph.get("transitions")
+    if not isinstance(states, list) or not isinstance(transitions, list):
+        return None, (jsonify({"error": "invalid choreography document"}), 502)
+    state_ids = [state.get("state_id") for state in states if isinstance(state, dict)]
+    if len(state_ids) != len(states) or any(
+        not isinstance(state_id, str) or not _choreography_id_re.fullmatch(state_id)
+        for state_id in state_ids
+    ):
+        return None, (jsonify({"error": "invalid choreography document"}), 502)
+    ids = set(state_ids)
+    transition_ids = [t.get("id") for t in transitions if isinstance(t, dict)]
+    initial_state = graph.get("initial_state")
+    if (len(ids) != len(states)
+            or not isinstance(initial_state, str) or initial_state not in ids
+            or len(transition_ids) != len(transitions)
+            or any(not isinstance(tid, str) or not tid for tid in transition_ids)
+            or len(set(transition_ids)) != len(transitions)
+            or any(not isinstance(t.get("from"), str) or t["from"] not in ids
+                   or not isinstance(t.get("to"), str) or t["to"] not in ids
+                   for t in transitions)):
+        return None, (jsonify({"error": "invalid choreography document"}), 502)
+    return graph, None
 
-    if not frames:
-        return jsonify({"error": "exercise has no frames"}), 422
 
-    # 2) Get repetitions from config (or override from request)
-    repetitions = data.get("repetitions")
-    if repetitions is None:
-        try:
-            cfg_resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
-            cfg_resp.raise_for_status()
-            repetitions = cfg_resp.json().get("repetitions", 1)
-        except requests.RequestException as e:
-            return jsonify({"error": "failed to fetch exercise config", "detail": str(e)}), 502
-
+def _play_into_state(choreography_id, run, target, starting=False):
+    if not _robot_playback_lock.acquire(blocking=False):
+        return jsonify({"error": "robot playback is busy"}), 409
     try:
-        repetitions = int(repetitions)
-        if repetitions < 1:
-            raise ValueError
-    except (ValueError, TypeError):
-        return jsonify({"error": "repetitions must be a positive integer"}), 400
+        result, error = play_exercise(target, stop_on_error=True)
+    finally:
+        _robot_playback_lock.release()
+    if error:
+        return error
+    if any(item["status"] == "error" for item in result["results"]):
+        return jsonify({"error": "robot playback failed", "state": None if starting else _snapshot(choreography_id, run),
+                        "partial_playback": True, "playback": result}), 502
+    run["state_id"] = target
+    return jsonify({"state": _snapshot(choreography_id, run), "playback": result}), 200
 
-    # 3) Loop repetitions × frames → send each to NAO
-    results = []
-    for rep in range(repetitions):
-        for frame in frames:
-            if voice_lines := frame.get("voice_lines"):
-                try:
-                    nao_response = call_nao_voice_lines(voice_lines)
-                    results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "ok"})
-                except requests.RequestException as e:
-                    results.append({"rep": rep, "type": "voice", "frame_index": frame.get("frame_index"), "status": "error", "detail": str(e)})
-            angles = frame.get("nao_angles", [])
-            try:
-                nao_response = call_nao_set_pose(angles)
-                results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "ok"})
-            except requests.RequestException as e:
-                results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "error", "detail": str(e)})
 
-    return jsonify({
-        "exercise_id": exercise_id,
-        "repetitions": repetitions,
-        "frames_per_rep": len(frames),
-        "total_poses_sent": len(results),
-        "results": results,
-    }), 200
+@app.route("/choreography/<choreography_id>/run", methods=["POST"])
+def start_choreography_run(choreography_id):
+    def start(cid):
+        if cid in _runs:
+            return jsonify({"error": "choreography run already active"}), 409
+        graph, error = _load_graph(cid)
+        if error:
+            return error
+        run = {"graph": graph, "state_id": graph["initial_state"]}
+        response = _play_into_state(cid, run, graph["initial_state"], starting=True)
+        if response[1] == 200:
+            _runs[cid] = run
+        return response
+    return _run_response(choreography_id, start)
+
+
+@app.route("/choreography/<choreography_id>/run/signal", methods=["POST"])
+def signal_choreography_run(choreography_id):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("transition_id"), str) or not data["transition_id"]:
+        return jsonify({"error": "JSON transition_id is required"}), 400
+    def signal(cid):
+        run, error = _active_run(cid)
+        if error:
+            return error
+        transition = next((t for t in run["graph"]["transitions"] if t["id"] == data["transition_id"]), None)
+        if transition is None:
+            return jsonify({"error": f"Transition '{data['transition_id']}' not found"}), 404
+        if transition["from"] != run["state_id"]:
+            return jsonify({"error": "transition does not start at current state", "state": _snapshot(cid, run)}), 409
+        return _play_into_state(cid, run, transition["to"])
+    return _run_response(choreography_id, signal)
+
+
+@app.route("/choreography/<choreography_id>/run/state", methods=["PUT"])
+def set_choreography_state(choreography_id):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("state_id"), str) or not data["state_id"]:
+        return jsonify({"error": "JSON state_id is required"}), 400
+    def set_state(cid):
+        run, error = _active_run(cid)
+        if error:
+            return error
+        if data["state_id"] not in {s["state_id"] for s in run["graph"]["states"]}:
+            return jsonify({"error": f"State '{data['state_id']}' not found"}), 404
+        run["state_id"] = data["state_id"]
+        return jsonify(_snapshot(cid, run)), 200
+    return _run_response(choreography_id, set_state)
+
+
+@app.route("/choreography/<choreography_id>/run", methods=["GET"])
+def get_choreography_run(choreography_id):
+    def get_run(cid):
+        run, error = _active_run(cid)
+        return error if error else (jsonify(_snapshot(cid, run)), 200)
+    return _run_response(choreography_id, get_run)
+
+
+@app.route("/choreography/<choreography_id>/run", methods=["DELETE"])
+def stop_choreography_run(choreography_id):
+    def stop(cid):
+        run, error = _active_run(cid)
+        if error:
+            return error
+        del _runs[cid]
+        return jsonify({"choreography_id": cid, "state_id": run["state_id"], "active": False}), 200
+    return _run_response(choreography_id, stop)
 
 
 def parse_time_range(form):

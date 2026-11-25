@@ -20,11 +20,13 @@ export default defineConfig({
       "/exercise/from_video": { target: "http://localhost:7000", changeOrigin: true },
       "/exercise/from_image": { target: "http://localhost:7000", changeOrigin: true },
       "^/exercise/[^/]+/run$": { target: "http://localhost:7000", changeOrigin: true },
+      "^/choreography/[^/]+/run(?:/(?:signal|state))?$": { target: "http://localhost:7000", changeOrigin: true },
       // robot: must be above "/voiceLines"
       "/voiceLines/applyVoiceLine": { target: "http://localhost:5000", changeOrigin: true },
       // exercise config service
       "/voiceLines": { target: "http://localhost:7001", changeOrigin: true },
       "/exercise": { target: "http://localhost:7001", changeOrigin: true },
+      "/choreography": { target: "http://localhost:7001", changeOrigin: true },
       // voice command API
       "/command": { target: "http://localhost:8000", changeOrigin: true },
       "/pose": { target: "http://localhost:8000", changeOrigin: true },
