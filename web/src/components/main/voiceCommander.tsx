@@ -6,7 +6,7 @@ import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
 import { MicButton } from "@/components/ui/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
-import { API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
 import { TranscriptBlock } from "@/components/ui/transcriptBlock";
 import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
@@ -81,16 +81,7 @@ export function VoiceCommander() {
       );
 
       try {
-        const res = await fetch(`${API_BASE}/command`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command: items[i].command }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || data.message || `HTTP ${res.status}`);
-        }
+        await api("/command", { method: "POST", json: { command: items[i].command } });
 
         setQueue((prev) =>
           prev.map((item, idx) => (idx === i ? { ...item, status: "done" } : item))
