@@ -169,7 +169,7 @@ def fetch_exercise(exercise_id, repetitions_override=None):
 
 
 def play_exercise(exercise_id, repetitions_override=None, stop_on_error=False,
-                  legacy_results=False):
+                  legacy_results=False, cancelled=None):
     fetched, error = fetch_exercise(exercise_id, repetitions_override)
     if error:
         return None, error
@@ -177,12 +177,16 @@ def play_exercise(exercise_id, repetitions_override=None, stop_on_error=False,
     results = []
     for rep in range(repetitions):
         for frame in frames:
+            if cancelled and cancelled():
+                return playback_result(exercise_id, repetitions, frames, results), None
             for kind, payload, sender in (
                 ("voice", frame.get("voice_lines"), call_nao_voice_lines),
                 ("pose", frame.get("nao_angles", []), call_nao_set_pose),
             ):
                 if kind == "voice" and not payload:
                     continue
+                if cancelled and cancelled():
+                    return playback_result(exercise_id, repetitions, frames, results), None
                 item = {"rep": rep, "type": kind, "frame_index": frame.get("frame_index")}
                 try:
                     robot_result = sender(payload)
@@ -446,46 +450,22 @@ def exercise_run(exercise_id):
     return error if error else (jsonify(result), 200)
 
 
-# One run per choreography in this translator process. A nonblocking lock per ID
-# rejects concurrent commands instead of queueing a stale signal behind playback.
-_runs = {}
-# Entries exist only while a request is using or waiting to acquire that ID.
-# [lock, number of request handlers referencing the entry]
-_run_locks = {}
+# A translator process controls one robot and therefore one active run.
+_runs = {}  # run_id -> run; stopped runs remain queryable until process restart
+_current_run_id = None
+_starting = False
 _run_registry_lock = threading.Lock()
 _robot_playback_lock = threading.Lock()
 _choreography_id_re = re.compile(r"^[0-9a-f]{8}$")
 
 
-def _run_response(choreography_id, operation):
-    if not _choreography_id_re.fullmatch(choreography_id):
-        return jsonify({"error": "choreography_id must be an 8-character lowercase hex ID"}), 400
-    with _run_registry_lock:
-        entry = _run_locks.setdefault(choreography_id, [threading.Lock(), 0])
-        entry[1] += 1
-    acquired = entry[0].acquire(blocking=False)
-    try:
-        if not acquired:
-            return jsonify({"error": "choreography run is busy"}), 409
-        return operation(choreography_id)
-    finally:
-        if acquired:
-            entry[0].release()
-        with _run_registry_lock:
-            entry[1] -= 1
-            if entry[1] == 0:
-                del _run_locks[choreography_id]
-
-
-def _active_run(choreography_id):
-    run = _runs.get(choreography_id)
-    if run is None:
-        return None, (jsonify({"error": "no active choreography run"}), 409)
-    return run, None
-
-
-def _snapshot(choreography_id, run):
-    return {"choreography_id": choreography_id, "state_id": run["state_id"], "active": True}
+def _snapshot(run):
+    state_id = run["state_id"]
+    return {"run_id": run["run_id"], "choreography_id": run["choreography_id"],
+            "state_id": state_id, "status": run["status"],
+            "outgoing_transitions": [dict(t) for t in run["graph"]["transitions"]
+                                     if t["from"] == state_id],
+            "playback": run["playback"], "error": run["error"]}
 
 
 def _load_graph(choreography_id):
@@ -524,89 +504,145 @@ def _load_graph(choreography_id):
     return graph, None
 
 
-def _play_into_state(choreography_id, run, target, starting=False):
-    if not _robot_playback_lock.acquire(blocking=False):
-        return jsonify({"error": "robot playback is busy"}), 409
+def _perform_state(run, target, starting):
+    """Complete one performance; state changes only after full robot success."""
+    with app.app_context():
+        _perform_state_in_context(run, target, starting)
+
+
+def _perform_state_in_context(run, target, starting):
+    global _current_run_id
     try:
-        result, error = play_exercise(target, stop_on_error=True)
-    finally:
-        _robot_playback_lock.release()
-    if error:
-        return error
-    if any(item["status"] == "error" for item in result["results"]):
-        return jsonify({"error": "robot playback failed", "state": None if starting else _snapshot(choreography_id, run),
-                        "partial_playback": True, "playback": result}), 502
-    run["state_id"] = target
-    return jsonify({"state": _snapshot(choreography_id, run), "playback": result}), 200
+        with _robot_playback_lock:
+            result, failure = play_exercise(target, stop_on_error=True,
+                                            cancelled=run["stop_event"].is_set)
+    except Exception:
+        app.logger.exception("choreography playback failed for run %s", run["run_id"])
+        result, failure = None, (jsonify({"error": "unexpected playback failure"}), 502)
+    with _run_registry_lock:
+        run["playback"] = result
+        if run["stop_event"].is_set():
+            run["status"] = "stopped"
+        elif failure:
+            run["error"] = failure[0].get_json()["error"]
+            run["status"] = "stopped" if starting else "waiting"
+        elif any(item["status"] == "error" for item in result["results"]):
+            run["error"] = "robot playback failed; some commands may have completed"
+            run["status"] = "stopped" if starting else "waiting"
+        else:
+            run["state_id"] = target
+            run["error"] = None
+            run["status"] = "waiting"
+        run["worker_done"].set()
+        if run["status"] == "stopped" and _current_run_id == run["run_id"]:
+            _current_run_id = None
+
+
+def _start_performance(run, target, starting=False):
+    run["status"] = "performing"
+    run["error"] = None
+    run["worker_done"].clear()
+    worker = threading.Thread(target=_perform_state, args=(run, target, starting), daemon=True)
+    worker.start()
 
 
 @app.route("/choreography/<choreography_id>/run", methods=["POST"])
 def start_choreography_run(choreography_id):
-    def start(cid):
-        if cid in _runs:
-            return jsonify({"error": "choreography run already active"}), 409
-        graph, error = _load_graph(cid)
-        if error:
-            return error
-        run = {"graph": graph, "state_id": graph["initial_state"]}
-        response = _play_into_state(cid, run, graph["initial_state"], starting=True)
-        if response[1] == 200:
-            _runs[cid] = run
-        return response
-    return _run_response(choreography_id, start)
+    global _current_run_id, _starting
+    if not _choreography_id_re.fullmatch(choreography_id):
+        return jsonify({"error": "choreography_id must be an 8-character lowercase hex ID"}), 400
+    with _run_registry_lock:
+        if _current_run_id is not None or _starting:
+            return jsonify({"error": "another choreography run is active"}), 409
+        _starting = True
+    try:
+        graph, failure = _load_graph(choreography_id)
+        if failure:
+            return failure
+        with _run_registry_lock:
+            run_id = uuid.uuid4().hex
+            run = {"run_id": run_id, "choreography_id": choreography_id,
+                   "graph": graph, "state_id": graph["initial_state"],
+                   "status": "performing", "stop_event": threading.Event(),
+                   "worker_done": threading.Event(), "playback": None, "error": None}
+            _runs[run_id] = run
+            _current_run_id = run_id
+            _start_performance(run, graph["initial_state"], starting=True)
+            return jsonify(_snapshot(run)), 202
+    finally:
+        with _run_registry_lock:
+            _starting = False
 
 
-@app.route("/choreography/<choreography_id>/run/signal", methods=["POST"])
-def signal_choreography_run(choreography_id):
+@app.route("/run/current", methods=["GET"])
+def current_choreography_run():
+    with _run_registry_lock:
+        if _current_run_id is None or _runs[_current_run_id]["status"] == "stopped":
+            return jsonify({"error": "no active choreography run"}), 404
+        return jsonify(_snapshot(_runs[_current_run_id])), 200
+
+
+@app.route("/run/<run_id>", methods=["GET"])
+def get_choreography_run(run_id):
+    with _run_registry_lock:
+        run = _runs.get(run_id)
+        return (jsonify(_snapshot(run)), 200) if run else (jsonify({"error": "run not found"}), 404)
+
+
+@app.route("/run/<run_id>/signal", methods=["POST"])
+def signal_choreography_run(run_id):
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not isinstance(data.get("transition_id"), str) or not data["transition_id"]:
         return jsonify({"error": "JSON transition_id is required"}), 400
-    def signal(cid):
-        run, error = _active_run(cid)
-        if error:
-            return error
+    with _run_registry_lock:
+        run = _runs.get(run_id)
+        if run is None:
+            return jsonify({"error": "run not found"}), 404
+        if run["status"] != "waiting":
+            return jsonify({"error": "run must be waiting for a signal"}), 409
         transition = next((t for t in run["graph"]["transitions"] if t["id"] == data["transition_id"]), None)
         if transition is None:
             return jsonify({"error": f"Transition '{data['transition_id']}' not found"}), 404
         if transition["from"] != run["state_id"]:
-            return jsonify({"error": "transition does not start at current state", "state": _snapshot(cid, run)}), 409
-        return _play_into_state(cid, run, transition["to"])
-    return _run_response(choreography_id, signal)
+            return jsonify({"error": "transition does not start at current state"}), 409
+        _start_performance(run, transition["to"])
+        return jsonify(_snapshot(run)), 202
 
 
-@app.route("/choreography/<choreography_id>/run/state", methods=["PUT"])
-def set_choreography_state(choreography_id):
+@app.route("/run/<run_id>/goto", methods=["POST"])
+def goto_choreography_state(run_id):
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not isinstance(data.get("state_id"), str) or not data["state_id"]:
         return jsonify({"error": "JSON state_id is required"}), 400
-    def set_state(cid):
-        run, error = _active_run(cid)
-        if error:
-            return error
+    with _run_registry_lock:
+        run = _runs.get(run_id)
+        if run is None:
+            return jsonify({"error": "run not found"}), 404
+        if run["status"] != "waiting":
+            return jsonify({"error": "run must be waiting before goto"}), 409
         if data["state_id"] not in {s["state_id"] for s in run["graph"]["states"]}:
             return jsonify({"error": f"State '{data['state_id']}' not found"}), 404
         run["state_id"] = data["state_id"]
-        return jsonify(_snapshot(cid, run)), 200
-    return _run_response(choreography_id, set_state)
+        run["playback"] = None
+        run["error"] = None
+        return jsonify(_snapshot(run)), 200
 
 
-@app.route("/choreography/<choreography_id>/run", methods=["GET"])
-def get_choreography_run(choreography_id):
-    def get_run(cid):
-        run, error = _active_run(cid)
-        return error if error else (jsonify(_snapshot(cid, run)), 200)
-    return _run_response(choreography_id, get_run)
-
-
-@app.route("/choreography/<choreography_id>/run", methods=["DELETE"])
-def stop_choreography_run(choreography_id):
-    def stop(cid):
-        run, error = _active_run(cid)
-        if error:
-            return error
-        del _runs[cid]
-        return jsonify({"choreography_id": cid, "state_id": run["state_id"], "active": False}), 200
-    return _run_response(choreography_id, stop)
+@app.route("/run/<run_id>/stop", methods=["POST"])
+def stop_choreography_run(run_id):
+    global _current_run_id
+    with _run_registry_lock:
+        run = _runs.get(run_id)
+        if run is None:
+            return jsonify({"error": "run not found"}), 404
+        if run["status"] == "stopped":
+            return jsonify({"error": "run already stopped"}), 409
+        run["stop_event"].set()
+        run["status"] = "stopped"
+        # Keep the robot reserved until an in-flight command finishes.
+        if run["worker_done"].is_set():
+            _current_run_id = None
+        return jsonify(_snapshot(run)), 200
 
 
 def parse_time_range(form):

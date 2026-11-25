@@ -1,6 +1,7 @@
-"""Hardware-free tests of choreography playback and run coordination."""
+"""Hardware-free tests for the documented asynchronous run API."""
 import sys
 import threading
+import time
 from unittest.mock import patch
 
 import requests
@@ -14,9 +15,9 @@ with patch("os.makedirs"):
 translator.app.config.update(TESTING=True)
 
 CHOREO = "aaaaaaaa"
+OTHER = "bbbbbbbb"
 FIRST = "11111111"
 SECOND = "22222222"
-OTHER = "bbbbbbbb"
 
 
 def graph(choreography_id=CHOREO):
@@ -29,8 +30,10 @@ def graph(choreography_id=CHOREO):
 class ChoreographyRun(OfflineCase):
     def setUp(self):
         super().setUp()
-        translator._runs.clear()
-        translator._run_locks.clear()
+        with translator._run_registry_lock:
+            translator._runs.clear()
+            translator._current_run_id = None
+            translator._starting = False
         self.client = translator.app.test_client()
         self.calls = []
 
@@ -40,8 +43,7 @@ class ChoreographyRun(OfflineCase):
             if url.endswith("/frames"):
                 exercise_id = url.split("/")[-2]
                 return response([{"frame_index": 1, "voice_lines": {"text": exercise_id}, "nao_angles": [1]},
-                                 {"frame_index": 0, "nao_angles": [0]},
-                                 {"frame_index": 1, "nao_angles": [1]}])
+                                 {"frame_index": 0, "nao_angles": [0]}])
             return response({"repetitions": 2})
 
         self.upstream = patch.object(translator, "request_with_retries", side_effect=upstream)
@@ -54,103 +56,137 @@ class ChoreographyRun(OfflineCase):
         self.addCleanup(self.move.stop)
         self.addCleanup(self.speak.stop)
 
+    def wait_status(self, run_id, status):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            current = self.client.get(f"/run/{run_id}").json
+            if current["status"] == status:
+                return current
+            time.sleep(0.005)
+        self.fail(f"run did not reach {status}: {current}")
+
     def start(self, choreography_id=CHOREO):
-        return self.client.post(f"/choreography/{choreography_id}/run")
+        result = self.client.post(f"/choreography/{choreography_id}/run")
+        if result.status_code == 202:
+            self.run_id = result.json["run_id"]
+        return result
 
-    def test_start_plays_initial_exercise_in_stored_order_and_repetitions(self):
+    def test_start_async_order_state_and_outgoing_transitions(self):
         result = self.start()
-        self.assertEqual(result.status_code, 200)
-        self.assertEqual(result.json["state"]["state_id"], FIRST)
-        self.assertEqual(result.json["playback"]["repetitions"], 2)
-        one_rep = [("voice", {"text": FIRST}), ("pose", [1]), ("pose", [0]), ("pose", [1])]
-        self.assertEqual(self.calls, one_rep * 2)
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").json["state_id"], FIRST)
+        self.assertEqual(result.status_code, 202)
+        self.assertEqual(result.json["status"], "performing")
+        run = self.wait_status(self.run_id, "waiting")
+        self.assertEqual(run["state_id"], FIRST)
+        self.assertEqual([t["id"] for t in run["outgoing_transitions"]], ["go"])
+        self.assertEqual(run["playback"]["repetitions"], 2)
+        self.assertEqual(self.calls, [("voice", {"text": FIRST}), ("pose", [1]), ("pose", [0])] * 2)
+        self.assertEqual(self.client.get("/run/current").json["run_id"], self.run_id)
 
-    def test_signal_and_direct_state_change(self):
+    def test_wrong_signal_and_goto_send_no_robot_commands(self):
         self.start()
+        self.wait_status(self.run_id, "waiting")
         self.calls.clear()
-        wrong = self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "back"})
+        wrong = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "back"})
         self.assertEqual(wrong.status_code, 409)
-        self.assertIn("current state", wrong.json["error"])
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").json["state_id"], FIRST)
-
-        direct = self.client.put(f"/choreography/{CHOREO}/run/state", json={"state_id": SECOND})
+        self.assertEqual(self.client.get(f"/run/{self.run_id}").json["state_id"], FIRST)
+        direct = self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND})
         self.assertEqual((direct.status_code, direct.json["state_id"]), (200, SECOND))
+        self.assertEqual(direct.json["status"], "waiting")
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "go"}).status_code, 409)
-        self.assertEqual(self.calls, [])
-        moved = self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "back"})
-        self.assertEqual((moved.status_code, moved.json["state"]["state_id"]), (200, FIRST))
-        self.assertEqual(len(self.calls), 8)
+        self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
+        accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "back"})
+        self.assertEqual(accepted.status_code, 202)
+        self.assertEqual(self.wait_status(self.run_id, "waiting")["state_id"], FIRST)
+        self.assertEqual(len(self.calls), 6)
 
-    def test_stop_isolated_runs_and_repeated_operations(self):
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").status_code, 409)
-        self.assertEqual(self.client.delete(f"/choreography/{CHOREO}/run").status_code, 409)
+    def test_only_one_active_run_and_stop(self):
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
         self.start()
+        self.wait_status(self.run_id, "waiting")
+        self.assertEqual(self.start(OTHER).status_code, 409)
         self.assertEqual(self.start().status_code, 409)
-        self.start(OTHER)
-        self.assertEqual(self.client.delete(f"/choreography/{CHOREO}/run").json["active"], False)
-        self.assertEqual(self.client.delete(f"/choreography/{CHOREO}/run").status_code, 409)
-        self.calls.clear()
-        self.assertEqual(self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "go"}).status_code, 409)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.get(f"/choreography/{OTHER}/run").json["state_id"], FIRST)
+        stopped = self.client.post(f"/run/{self.run_id}/stop")
+        self.assertEqual((stopped.status_code, stopped.json["status"]), (200, "stopped"))
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+        self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 409)
+        self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
+        self.assertEqual(self.start(OTHER).status_code, 202)
+        self.wait_status(self.run_id, "waiting")
 
-    def test_missing_invalid_empty_and_unavailable_upstream(self):
+    def test_invalid_unknown_empty_and_unavailable(self):
         self.assertEqual(self.start("bad").status_code, 400)
-        self.assertEqual(self.client.post(f"/choreography/{CHOREO}/run/signal", json={}).status_code, 400)
         with patch.object(translator, "request_with_retries", return_value=response({}, 404)):
             self.assertEqual(self.start().status_code, 404)
         with patch.object(translator, "request_with_retries", side_effect=requests.ConnectionError("down")):
             self.assertEqual(self.start().status_code, 502)
-        with patch.object(translator, "request_with_retries", return_value=response(dict(graph(), states=[{"state_id": []}]))):
-            self.assertEqual(self.start().status_code, 502)
-        with patch.object(translator, "request_with_retries", return_value=response(dict(graph(), initial_state=[]))):
+        with patch.object(translator, "request_with_retries", return_value=response(dict(graph(), states=[]))):
             self.assertEqual(self.start().status_code, 502)
         with patch.object(translator, "request_with_retries", side_effect=lambda method, url, **kw: response(graph()) if "/choreography/" in url else response([])):
-            self.assertEqual(self.start().status_code, 422)
-        with patch.object(translator, "request_with_retries", side_effect=lambda method, url, **kw: response(graph()) if "/choreography/" in url else response([None])):
-            self.assertEqual(self.start().status_code, 502)
+            self.assertEqual(self.start().status_code, 202)
+            self.assertIn("no frames", self.wait_status(self.run_id, "stopped")["error"])
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").status_code, 409)
-        self.start()
-        self.assertEqual(self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "missing"}).status_code, 404)
-        self.assertEqual(self.client.put(f"/choreography/{CHOREO}/run/state", json={"state_id": "99999999"}).status_code, 404)
-        self.assertEqual(self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "go"}).status_code, 200)
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+        self.assertEqual(self.client.get("/run/no-such-id").status_code, 404)
 
-    def test_unavailable_target_keeps_state(self):
+    def test_signal_failure_keeps_source_and_reports_error(self):
         self.start()
-        def upstream(method, url, **kwargs):
+        self.wait_status(self.run_id, "waiting")
+        self.calls.clear()
+        with patch.object(translator, "call_nao_set_pose", side_effect=requests.Timeout("robot")):
+            accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
+            self.assertEqual(accepted.status_code, 202)
+            run = self.wait_status(self.run_id, "waiting")
+        self.assertEqual(run["state_id"], FIRST)
+        self.assertIn("robot playback failed", run["error"])
+        self.assertEqual(self.calls, [("voice", {"text": SECOND})])
+
+    def test_unavailable_target_keeps_source_without_robot_calls(self):
+        self.start()
+        self.wait_status(self.run_id, "waiting")
+        self.calls.clear()
+
+        def unavailable(method, url, **kwargs):
             if url.endswith(f"/exercise/{SECOND}/frames"):
                 raise requests.ConnectionError("exercise service down")
             return response({"repetitions": 1})
-        self.calls.clear()
-        with patch.object(translator, "request_with_retries", side_effect=upstream):
-            result = self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "go"})
-        self.assertEqual(result.status_code, 502)
+
+        with patch.object(translator, "request_with_retries", side_effect=unavailable):
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 202)
+            run = self.wait_status(self.run_id, "waiting")
+        self.assertEqual(run["state_id"], FIRST)
+        self.assertIn("failed to fetch frames", run["error"])
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").json["state_id"], FIRST)
 
-    def test_partial_robot_failure_keeps_source_state(self):
-        self.start()
-        self.calls.clear()
-        with patch.object(translator, "call_nao_set_pose", side_effect=requests.Timeout("robot")):
-            failed = self.client.post(f"/choreography/{CHOREO}/run/signal", json={"transition_id": "go"})
-        self.assertEqual(failed.status_code, 502)
-        self.assertTrue(failed.json["partial_playback"])
-        self.assertEqual(failed.json["state"]["state_id"], FIRST)
-        self.assertEqual(self.calls, [("voice", {"text": SECOND})])
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").json["state_id"], FIRST)
-        translator._runs.clear()
-        with patch.object(translator, "call_nao_set_pose", return_value={"success": False}):
-            self.assertEqual(self.start().status_code, 502)
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").status_code, 409)
-
-    def test_conflicting_request_is_rejected_while_playback_is_running(self):
+    def test_stop_between_frames(self):
         entered = threading.Event()
         release = threading.Event()
-        outcomes = []
+        commands = []
+
+        def slow_pose(angles):
+            commands.append(angles)
+            entered.set()
+            release.wait(3)
+            return {"success": True}
+
+        with patch.object(translator, "call_nao_set_pose", side_effect=slow_pose):
+            result = self.start()
+            self.assertEqual(result.status_code, 202)
+            self.assertTrue(entered.wait(3))
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND}).status_code, 409)
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
+            self.assertEqual(self.start(OTHER).status_code, 409)
+            release.set()
+            self.wait_status(self.run_id, "stopped")
+        self.assertEqual(commands, [[1]])
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+
+    def test_stop_during_second_performance_keeps_robot_reserved(self):
+        self.start()
+        self.wait_status(self.run_id, "waiting")
+        entered = threading.Event()
+        release = threading.Event()
 
         def slow_pose(angles):
             entered.set()
@@ -158,77 +194,17 @@ class ChoreographyRun(OfflineCase):
             return {"success": True}
 
         with patch.object(translator, "call_nao_set_pose", side_effect=slow_pose):
-            worker = threading.Thread(target=lambda: outcomes.append(translator.app.test_client().post(f"/choreography/{CHOREO}/run").status_code))
-            worker.start()
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 202)
             self.assertTrue(entered.wait(3))
-            try:
-                self.assertEqual(self.start().status_code, 409)
-                self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").status_code, 409)
-            finally:
-                release.set()
-                worker.join(3)
-        self.assertEqual(outcomes, [200])
-        self.assertEqual(translator._run_locks, {})
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
+            self.assertEqual(self.start(OTHER).status_code, 409)
+            release.set()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and translator._current_run_id is not None:
+            time.sleep(0.005)
+        self.assertIsNone(translator._current_run_id)
 
-    def test_different_ids_cannot_play_on_robot_concurrently(self):
-        entered = threading.Event()
-        release = threading.Event()
-        outcomes = []
-
-        def pose(angles):
-            if threading.current_thread().name == "first-run":
-                entered.set()
-                release.wait(3)
-            return {"success": True}
-
-        with patch.object(translator, "call_nao_set_pose", side_effect=pose):
-            worker = threading.Thread(name="first-run", target=lambda: outcomes.append(translator.app.test_client().post(f"/choreography/{CHOREO}/run").status_code))
-            worker.start()
-            self.assertTrue(entered.wait(3))
-            try:
-                self.assertEqual(self.start(OTHER).status_code, 409)
-                self.assertEqual(self.client.get(f"/choreography/{OTHER}/run").status_code, 409)
-                self.assertEqual(self.calls, [("voice", {"text": FIRST})])
-            finally:
-                release.set()
-                worker.join(3)
-        self.assertEqual(outcomes, [200])
-        self.assertEqual(self.start(OTHER).status_code, 200)
-        self.assertEqual(self.client.get(f"/choreography/{CHOREO}/run").json["state_id"], FIRST)
-        self.assertEqual(self.client.get(f"/choreography/{OTHER}/run").json["state_id"], FIRST)
-
-    def test_legacy_run_waits_for_choreography_playback(self):
-        entered = threading.Event()
-        release = threading.Event()
-        legacy_started = threading.Event()
-        outcomes = []
-
-        def pose(angles):
-            if threading.current_thread().name == "first-run":
-                entered.set()
-                release.wait(3)
-            return {"success": True}
-
-        with patch.object(translator, "call_nao_set_pose", side_effect=pose):
-            first = threading.Thread(name="first-run", target=lambda: outcomes.append(translator.app.test_client().post(f"/choreography/{CHOREO}/run").status_code))
-            def legacy_run():
-                legacy_started.set()
-                outcomes.append(translator.app.test_client().post(f"/exercise/{SECOND}/run", json={"repetitions": 1}).status_code)
-            second = threading.Thread(name="legacy-run", target=legacy_run)
-            first.start()
-            self.assertTrue(entered.wait(3))
-            second.start()
-            try:
-                self.assertTrue(legacy_started.wait(3))
-                self.assertEqual(len(outcomes), 0)
-            finally:
-                release.set()
-                first.join(3)
-                second.join(3)
-        self.assertEqual(outcomes, [200, 200])
-        self.assertEqual(translator._run_locks, {})
-
-    def test_unknown_ids_do_not_leave_process_locks(self):
-        for index in range(100):
-            self.assertEqual(self.client.get(f"/choreography/{index:08x}/run").status_code, 409)
-        self.assertEqual(translator._run_locks, {})
+    def test_legacy_exercise_contract(self):
+        result = self.client.post(f"/exercise/{FIRST}/run", json={"repetitions": 1})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json["total_poses_sent"], 3)

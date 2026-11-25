@@ -1,105 +1,51 @@
 # Running a choreography
 
-**Translator** runs choreographies. **exerciseConfigService** stores each
-choreography as a graph and serves it through
-`GET /choreography/<choreography_id>`. Each state in the graph points to a saved
-exercise through its `state_id`.
+The formatted NAOMI document is maintained in
+[`naomi-documents/vystupy/choreography-run/main.tex`](https://github.com/team26fiitstu/naomi-documents/tree/main/vystupy/choreography-run).
+This page is a quick reference for translator developers.
 
-Imagine a choreography with two saved exercises. A transition named `go`
-leads from the first exercise to the second. If the first exercise is current,
-sending `go` plays the second one. The transition stores the first exercise's
-ID in `from` and the second exercise's ID in `to`.
+A choreography is a graph of saved exercises. The graph comes from
+`GET /choreography/<id>` in exerciseConfigService. Starting a run loads the
+graph once and schedules its initial exercise in the background. Translator
+plays the saved frame order, repetitions, voice lines and poses. A successful
+performance changes the run from `performing` to `waiting`.
 
-The stored graph has `schema_version: 1`, `id`, `initial_state`, `states`, and
-`transitions`. Each transition has an `id`, `from`, `to`, and `label`.
-
-In the API examples, names in angle brackets are placeholders, not values to
-send literally. Replace `<choreography_id>` and `<target_exercise_id>` with the
-real IDs of a saved graph and exercise. Those IDs are eight lowercase
-hexadecimal characters. Send JSON for requests with a body.
-
-## Run a graph
-
-| Action | Request | What happens |
+| Action | Request | Result |
 | --- | --- | --- |
-| Start | `POST /choreography/<choreography_id>/run` | Loads the graph and plays its `initial_state`. No request body is needed. |
-| Follow a transition | `POST /choreography/<choreography_id>/run/signal` with `{"transition_id":"go"}` | Plays the target exercise if the transition starts at the current state. |
-| Set the state directly | `PUT /choreography/<choreography_id>/run/state` with `{"state_id":"<target_exercise_id>"}` | Moves the current state to any state in the graph. Sends no speech or motion command. |
-| Read the state | `GET /choreography/<choreography_id>/run` | Returns the current state. |
-| Stop | `DELETE /choreography/<choreography_id>/run` | Ends the run. Later signals are rejected. |
+| Start | `POST /choreography/<id>/run` | `202` with a new `run_id`; performs the initial state asynchronously. |
+| Find active run | `GET /run/current` | `200` with run data, or `404` when none is active. |
+| Inspect run | `GET /run/<run_id>` | `200` with current state, status, outgoing transitions, playback report and error. |
+| Follow transition | `POST /run/<run_id>/signal` with `{"transition_id":"go"}` | `202` when waiting and `go` starts at the current state; schedules the target exercise. |
+| Move without playback | `POST /run/<run_id>/goto` with `{"state_id":"<exercise_id>"}` | `200` with the chosen state; sends no speech or motion. |
+| Stop | `POST /run/<run_id>/stop` | `200` with status `stopped`; prevents further playback between robot commands. |
 
-Start and a successful signal return `200` with the new state and a playback
-report. For example:
+`<id>`, `<run_id>` and `<exercise_id>` are placeholders. `go` is an example
+transition ID from the stored graph. It is not a special command.
+
+All successful responses use the same shape:
 
 ```json
 {
-  "state": {
-    "choreography_id": "<choreography_id>",
-    "state_id": "<target_exercise_id>",
-    "active": true
-  },
-  "playback": {
-    "exercise_id": "<target_exercise_id>",
-    "repetitions": 1,
-    "frames_per_rep": 1,
-    "total_poses_sent": 2,
-    "results": [
-      {"rep": 0, "frame_index": 0, "type": "voice", "status": "ok"},
-      {"rep": 0, "frame_index": 0, "type": "pose", "status": "ok"}
-    ]
-  }
+  "run_id": "<run_id>",
+  "choreography_id": "<id>",
+  "state_id": "<exercise_id>",
+  "status": "waiting",
+  "outgoing_transitions": [
+    {"id": "go", "from": "<exercise_id>", "to": "<next_exercise_id>", "label": "Continue"}
+  ],
+  "playback": null,
+  "error": null
 }
 ```
 
-The state `GET` and direct-state `PUT` return only the `state` object shown above. `DELETE`
-returns the same fields with `active: false`. The name `total_poses_sent` comes
-from the existing exercise API; it counts entries in `results`, including voice
-commands.
+`playback` is filled after an exercise attempt. A failed start ends in
+`stopped`; a failed signal leaves the source state in `waiting` and sets
+`error`. Partial robot motion or speech cannot be undone. Poll `GET /run/<run_id>`
+for the outcome rather than treating `202` as completed playback.
 
-## Playback order
-
-Translator requests `GET /exercise/<state_id>/frames`, which returns frames in
-the saved `frame_sequence` order. It plays that sequence for the exercise's
-stored `repetitions`. On each frame, it sends any `voice_lines` before
-`nao_angles`.
-
-The graph is loaded once, at start. Editing the graph later does not change an
-active run. Exercise frames and repetitions are fetched when that exercise is
-played.
-
-## Errors and state after failure
-
-Error responses contain an `error` message. Translator reports choreography
-playback as successful only when the robot confirms every command.
-
-| Status | When it is returned |
-| --- | --- |
-| `400` | The choreography ID format, a required JSON field, or the exercise's stored repetition count is invalid. |
-| `404` | The choreography, transition, state, or target exercise is unknown. |
-| `409` | No run is active; a run is already active; a transition starts at another state; or a conflicting request or playback is in progress. A second stop also returns `409`. |
-| `422` | The target exercise has no frames. |
-| `502` | exerciseConfigService cannot be reached, returns invalid graph or exercise data, or robot playback fails. |
-
-If a robot call fails, translator stops playback at that command and returns
-`502` with `partial_playback: true` and the attempted `playback` report. A
-failed signal leaves the source `state_id` current. A failed start creates no
-active run; for a robot failure its response has `state: null`. Speech or
-movement already sent to the robot cannot be undone. Retrying a signal may
-repeat those commands.
-
-## Concurrent runs and restarts
-
-Runs have separate states by choreography ID. Within one translator process,
-requests for the same ID do not overlap: a request arriving while that run is
-busy receives `409`. Only one choreography or standalone exercise can play on
-the robot at a time. A competing choreography playback receives `409`; the
-existing `POST /exercise/<id>/run` waits for the current playback to finish.
-State reads, direct changes, and stops for other IDs remain available.
-
-Run state and locks live in translator memory. A restart loses active runs, and
-separate translator processes do not share them. Use one process for run control
-until shared storage and distributed locking are added. Other robot control
-routes do not use the playback lock and need separate coordination.
-
-The existing `POST /exercise/<id>/run` keeps its response shape and its
-behavior of returning HTTP `200` with individual robot errors in `results`.
+`400` means invalid input, `404` an unknown ID or no active run, `409` a
+conflicting operation, and `502` a failed choreography fetch or invalid graph.
+An empty or unavailable exercise is discovered in the worker and reported in
+the run's `error` field. Only one run may be active in a translator process.
+State and locks are process-local and are lost on restart. A physical NAO test
+is still required before live use.
