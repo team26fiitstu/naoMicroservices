@@ -88,6 +88,7 @@ class ChoreographyRun(OfflineCase):
         self.calls.clear()
         wrong = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "back"})
         self.assertEqual(wrong.status_code, 409)
+        self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "missing"}).status_code, 409)
         self.assertEqual(self.calls, [])
         self.assertEqual(self.client.get(f"/run/{self.run_id}").json["state_id"], FIRST)
         direct = self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND})
@@ -97,6 +98,7 @@ class ChoreographyRun(OfflineCase):
         self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
         accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "back"})
         self.assertEqual(accepted.status_code, 202)
+        self.assertEqual(accepted.json["state_id"], FIRST)
         self.assertEqual(self.wait_status(self.run_id, "waiting")["state_id"], FIRST)
         self.assertEqual(len(self.calls), 6)
 
@@ -182,6 +184,26 @@ class ChoreographyRun(OfflineCase):
         self.assertEqual(commands, [[1]])
         self.assertEqual(self.client.get("/run/current").status_code, 404)
 
+    def test_stop_finishes_current_frame_before_stopping(self):
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_speech(lines):
+            self.calls.append(("voice", lines))
+            entered.set()
+            release.wait(3)
+            return {"success": True}
+
+        with patch.object(translator, "call_nao_voice_lines", side_effect=slow_speech):
+            self.start()
+            self.assertTrue(entered.wait(3))
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
+            release.set()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and not translator._runs[self.run_id]["worker_done"].is_set():
+                time.sleep(0.005)
+        self.assertEqual(self.calls, [("voice", {"text": FIRST}), ("pose", [1])])
+
     def test_stop_during_second_performance_keeps_robot_reserved(self):
         self.start()
         self.wait_status(self.run_id, "waiting")
@@ -194,7 +216,9 @@ class ChoreographyRun(OfflineCase):
             return {"success": True}
 
         with patch.object(translator, "call_nao_set_pose", side_effect=slow_pose):
-            self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 202)
+            accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
+            self.assertEqual(accepted.status_code, 202)
+            self.assertEqual((accepted.json["state_id"], accepted.json["status"]), (SECOND, "performing"))
             self.assertTrue(entered.wait(3))
             self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
             self.assertEqual(self.start(OTHER).status_code, 409)
@@ -203,6 +227,30 @@ class ChoreographyRun(OfflineCase):
         while time.monotonic() < deadline and translator._current_run_id is not None:
             time.sleep(0.005)
         self.assertIsNone(translator._current_run_id)
+
+    def test_voice_only_and_pose_only_states(self):
+        def upstream(method, url, **kwargs):
+            if "/choreography/" in url:
+                return response(graph())
+            if url.endswith(f"/exercise/{FIRST}/frames"):
+                return response([{"frame_index": 0, "voice_lines": {"text": "hello"}, "nao_angles": []}])
+            if url.endswith(f"/exercise/{SECOND}/frames"):
+                return response([{"frame_index": 0, "nao_angles": [1]}])
+            return response({"repetitions": 1})
+
+        with patch.object(translator, "request_with_retries", side_effect=upstream):
+            self.start()
+            self.wait_status(self.run_id, "waiting")
+            self.assertEqual(self.calls, [("voice", {"text": "hello"})])
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 202)
+            self.wait_status(self.run_id, "waiting")
+        self.assertEqual(self.calls, [("voice", {"text": "hello"}), ("pose", [1])])
+
+    def test_frame_without_voice_or_pose_is_empty(self):
+        with patch.object(translator, "request_with_retries", side_effect=lambda method, url, **kw: response(graph()) if "/choreography/" in url else response([{"frame_index": 0, "nao_angles": []}])):
+            self.start()
+            self.assertIn("no playable content", self.wait_status(self.run_id, "stopped")["error"])
+        self.assertEqual(self.calls, [])
 
     def test_legacy_exercise_contract(self):
         result = self.client.post(f"/exercise/{FIRST}/run", json={"repetitions": 1})

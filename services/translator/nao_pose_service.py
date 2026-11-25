@@ -148,6 +148,8 @@ def fetch_exercise(exercise_id, repetitions_override=None):
         return None, (jsonify({"error": "exercise has no frames"}), 422)
     if any(not isinstance(frame, dict) for frame in frames):
         return None, (jsonify({"error": "invalid exercise frames"}), 502)
+    if not any(frame.get("voice_lines") or frame.get("nao_angles") for frame in frames):
+        return None, (jsonify({"error": "exercise has no playable content"}), 422)
 
     repetitions = repetitions_override
     if repetitions is None:
@@ -183,10 +185,8 @@ def play_exercise(exercise_id, repetitions_override=None, stop_on_error=False,
                 ("voice", frame.get("voice_lines"), call_nao_voice_lines),
                 ("pose", frame.get("nao_angles", []), call_nao_set_pose),
             ):
-                if kind == "voice" and not payload:
+                if not payload:
                     continue
-                if cancelled and cancelled():
-                    return playback_result(exercise_id, repetitions, frames, results), None
                 item = {"rep": rep, "type": kind, "frame_index": frame.get("frame_index")}
                 try:
                     robot_result = sender(payload)
@@ -505,7 +505,7 @@ def _load_graph(choreography_id):
 
 
 def _perform_state(run, target, starting):
-    """Complete one performance; state changes only after full robot success."""
+    """Complete one performance and publish its result."""
     with app.app_context():
         _perform_state_in_context(run, target, starting)
 
@@ -524,21 +524,27 @@ def _perform_state_in_context(run, target, starting):
         if run["stop_event"].is_set():
             run["status"] = "stopped"
         elif failure:
+            if not starting:
+                run["state_id"] = run["source_state_id"]
             run["error"] = failure[0].get_json()["error"]
             run["status"] = "stopped" if starting else "waiting"
         elif any(item["status"] == "error" for item in result["results"]):
+            if not starting:
+                run["state_id"] = run["source_state_id"]
             run["error"] = "robot playback failed; some commands may have completed"
             run["status"] = "stopped" if starting else "waiting"
         else:
-            run["state_id"] = target
             run["error"] = None
             run["status"] = "waiting"
+        run["source_state_id"] = None
         run["worker_done"].set()
         if run["status"] == "stopped" and _current_run_id == run["run_id"]:
             _current_run_id = None
 
 
 def _start_performance(run, target, starting=False):
+    run["source_state_id"] = None if starting else run["state_id"]
+    run["state_id"] = target
     run["status"] = "performing"
     run["error"] = None
     run["worker_done"].clear()
@@ -564,7 +570,8 @@ def start_choreography_run(choreography_id):
             run = {"run_id": run_id, "choreography_id": choreography_id,
                    "graph": graph, "state_id": graph["initial_state"],
                    "status": "performing", "stop_event": threading.Event(),
-                   "worker_done": threading.Event(), "playback": None, "error": None}
+                   "worker_done": threading.Event(), "source_state_id": None,
+                   "playback": None, "error": None}
             _runs[run_id] = run
             _current_run_id = run_id
             _start_performance(run, graph["initial_state"], starting=True)
@@ -602,7 +609,7 @@ def signal_choreography_run(run_id):
             return jsonify({"error": "run must be waiting for a signal"}), 409
         transition = next((t for t in run["graph"]["transitions"] if t["id"] == data["transition_id"]), None)
         if transition is None:
-            return jsonify({"error": f"Transition '{data['transition_id']}' not found"}), 404
+            return jsonify({"error": f"Transition '{data['transition_id']}' not found in this run"}), 409
         if transition["from"] != run["state_id"]:
             return jsonify({"error": "transition does not start at current state"}), 409
         _start_performance(run, transition["to"])
