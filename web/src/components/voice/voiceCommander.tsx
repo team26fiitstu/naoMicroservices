@@ -3,12 +3,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
-import { MicButton } from "@/components/ui/micButton";
+import { MicButton } from "@/components/voice/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
 import { api } from "@/lib/api";
 import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
-import { TranscriptBlock } from "@/components/ui/transcriptBlock";
+import { TranscriptBlock } from "@/components/voice/transcriptBlock";
 import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
 
 const ALL_COMMANDS = Object.keys(POSE_LABELS);

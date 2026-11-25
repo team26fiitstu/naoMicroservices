@@ -30,7 +30,7 @@ type Exercise = {
   description?: string | null;
 };
 
-export default function ExercisesStore() {
+export default function ExercisesPage() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading]     = useState(true);
   const { status, show: showStatus } = useStatus();

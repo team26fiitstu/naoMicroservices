@@ -5,13 +5,13 @@ import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { useStatus } from "@/hooks/useStatus";
 import { failureText } from "@/lib/errors";
-import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 import { useSelectedFile } from "@/hooks/useSelectedFile";
 import { api } from "@/lib/api";
 
 
-export default function SimpleUploadPage() {
+export default function UploadPage() {
   const { file, url: previewUrl, select, clear } = useSelectedFile();
   const [isUploading, setIsUploading] = useState(false);
   const [videoRange, setVideoRange] = useState<VideoRange | null>(null);
