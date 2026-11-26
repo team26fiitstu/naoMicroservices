@@ -13,6 +13,8 @@ sys.path.insert(0, str(TRANSLATOR_DIR))
 with patch("os.makedirs"):
     translator = load_module("offline_choreography_translator", TRANSLATOR_DIR / "nao_pose_service.py")
 translator.app.config.update(TESTING=True)
+real_reserve_robot_for_run = translator.reserve_robot_for_run
+real_release_robot_reservation = translator.release_robot_reservation
 
 CHOREO = "aaaaaaaa"
 OTHER = "bbbbbbbb"
@@ -139,7 +141,79 @@ class ChoreographyRun(OfflineCase):
                 self.assertEqual(self.start().status_code, status)
                 self.assertEqual(self.client.get("/run/current").status_code, 404)
                 self.assertEqual(translator._runs, {})
+                self.assertEqual(self.release_call.call_count, 0 if status == 409 else 1)
+
+    def test_lost_initial_reservation_reply_releases_remote_lease(self):
+        remote = {"token": None, "retired": set()}
+        calls = []
+
+        def upstream(method, url, **kwargs):
+            if "/choreography/" in url:
+                return response(graph())
+            self.assertEqual(url, translator.ROBOT_RESERVATION_URL)
+            token = kwargs["json"]["token"]
+            calls.append((method, token))
+            if method == "POST":
+                remote["token"] = token
+                raise requests.ReadTimeout("reservation reply lost")
+            remote["retired"].add(token)
+            remote["token"] = None
+            return response({"success": True})
+
+        with patch.object(translator, "request_with_retries", side_effect=upstream), \
+                patch.object(translator, "reserve_robot_for_run", wraps=real_reserve_robot_for_run), \
+                patch.object(translator, "release_robot_reservation", wraps=real_release_robot_reservation):
+            result = self.start()
+
+        self.assertEqual(result.status_code, 502)
+        self.assertEqual([method for method, _ in calls], ["POST", "DELETE"])
+        self.assertEqual(calls[0][1], calls[1][1])
+        self.assertIsNone(remote["token"])
+        self.assertIn(calls[0][1], remote["retired"])
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+        self.assertEqual(translator._runs, {})
+
+    def test_worker_start_failure_releases_reservation(self):
+        with patch.object(translator.threading.Thread, "start", side_effect=RuntimeError("no threads")):
+            result = self.start()
+        self.assertEqual(result.status_code, 503)
+        self.assertIn("failed to start playback worker", result.json["error"])
+        self.assertEqual(translator._runs, {})
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+        self.release_call.assert_called_once()
+
+    def test_signal_worker_start_failure_restores_waiting_state(self):
+        self.start()
+        self.wait_status(self.run_id, "waiting")
+        self.calls.clear()
+        with patch.object(translator.threading.Thread, "start", side_effect=RuntimeError("no threads")):
+            result = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
+        self.assertEqual(result.status_code, 503)
+        current = self.client.get(f"/run/{self.run_id}").json
+        self.assertEqual((current["state_id"], current["status"]), (FIRST, "waiting"))
+        self.assertTrue(translator._runs[self.run_id]["worker_done"].is_set())
+        self.assertEqual(self.calls, [])
         self.release_call.assert_not_called()
+
+    def test_reservation_monitor_start_failure_stops_worker(self):
+        original_start = threading.Thread.start
+        starts = []
+
+        def fail_second_start(thread):
+            starts.append(thread)
+            if len(starts) == 2:
+                raise RuntimeError("no monitor thread")
+            return original_start(thread)
+
+        with patch.object(translator.threading.Thread, "start", fail_second_start):
+            result = self.start()
+        self.assertEqual(result.status_code, 503)
+        self.assertIn("failed to start reservation monitor", result.json["error"])
+        run_id = result.json["run_id"]
+        self.assertTrue(translator._runs[run_id]["worker_done"].wait(3))
+        self.assertEqual(self.client.get(f"/run/{run_id}").json["status"], "stopped")
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+        self.release_call.assert_called_once()
 
     def test_invalid_unknown_empty_and_unavailable(self):
         self.assertEqual(self.start("bad").status_code, 400)

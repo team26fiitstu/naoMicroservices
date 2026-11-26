@@ -24,6 +24,8 @@ The API listens on `http://localhost:5000`. The container uses Python 2.7 and th
 - `POST /control/reservation` — reserve or renew robot control with `{"token":"<run_id>"}`.
 - `DELETE /control/reservation` — release that reservation with the same JSON body.
 
+Reservation tokens must be non-empty strings of at most 64 characters.
+
 Robot-changing requests are serialized within this service process. While a
 choreography has a reservation, pose, speech and test commands must include
 `X-Robot-Run-Token: <run_id>`; other requests receive `409`. Translator renews

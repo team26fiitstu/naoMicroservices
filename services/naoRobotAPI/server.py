@@ -44,6 +44,7 @@ _reservation_lock = threading.Lock()
 _robot_command_blueprints = frozenset(("test_api", "setting_pose_api", "voice_lines_api"))
 _reservation = {"token": None, "expires_at": 0}
 RESERVATION_SECONDS = 120
+MAX_RESERVATION_TOKEN_LENGTH = 64
 RETIRED_TOKEN_LIMIT = 1000
 _retired_tokens = set()
 _retired_token_order = deque()
@@ -85,8 +86,8 @@ def release_robot_command_lock(error):
 def robot_reservation():
     data = request.get_json(silent=True)
     token = data.get("token") if isinstance(data, dict) else None
-    if not isinstance(token, string_types) or not token:
-        return jsonify({"error": "token is required"}), 400
+    if not isinstance(token, string_types) or not token or len(token) > MAX_RESERVATION_TOKEN_LENGTH:
+        return jsonify({"error": "token must be a non-empty string of at most 64 characters"}), 400
     if request.method == "POST":
         # Renewal must work while a long robot call holds the command lock.
         with _reservation_lock:

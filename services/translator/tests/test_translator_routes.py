@@ -241,6 +241,8 @@ class TranslatorRoutes(OfflineCase):
                 del translator._robot_run_context.token
             translator.release_robot_reservation("run-a")
             self.assertEqual(send.call_args.args[:2], ("DELETE", translator.ROBOT_RESERVATION_URL))
+            self.assertIs(send.call_args.kwargs["idempotent"], True)
+            self.assertEqual(send.call_args.kwargs["max_attempts"], 2)
 
 
 

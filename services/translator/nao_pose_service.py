@@ -157,7 +157,7 @@ def release_robot_reservation(run_id):
     try:
         resp = request_with_retries("DELETE", ROBOT_RESERVATION_URL,
                                     json={"token": run_id}, timeout=5,
-                                    idempotent=False, max_attempts=1)
+                                    idempotent=True, max_attempts=2)
         resp.raise_for_status()
     except requests.RequestException:
         app.logger.exception("failed to release robot reservation for run %s", run_id)
@@ -657,13 +657,21 @@ def _perform_state_in_context(run, target, starting):
 
 
 def _start_performance(run, target, starting=False):
+    previous = (run["source_state_id"], run["state_id"], run["status"],
+                run["error"], run["worker_done"].is_set())
     run["source_state_id"] = None if starting else run["state_id"]
     run["state_id"] = target
     run["status"] = "performing"
     run["error"] = None
     run["worker_done"].clear()
-    worker = threading.Thread(target=_perform_state, args=(run, target, starting), daemon=True)
-    worker.start()
+    try:
+        worker = threading.Thread(target=_perform_state, args=(run, target, starting), daemon=True)
+        worker.start()
+    except RuntimeError:
+        run["source_state_id"], run["state_id"], run["status"], run["error"], was_done = previous
+        if was_done:
+            run["worker_done"].set()
+        raise
 
 
 @app.route("/choreography/<choreography_id>/run", methods=["POST"])
@@ -682,7 +690,13 @@ def start_choreography_run(choreography_id):
         run_id = uuid.uuid4().hex
         failure = reserve_robot_for_run(run_id)
         if failure:
+            if failure[1] == 502:
+                # A lost POST response does not prove the robot rejected the lease.
+                # DELETE retires this token even when the POST arrives later.
+                if not release_robot_reservation(run_id):
+                    app.logger.error("could not retire uncertain reservation for run %s", run_id)
             return failure
+        worker_error = None
         with _run_registry_lock:
             run = {"run_id": run_id, "choreography_id": choreography_id,
                    "graph": graph, "state_id": graph["initial_state"],
@@ -693,9 +707,26 @@ def start_choreography_run(choreography_id):
                    "reservation_lock": threading.Lock()}
             _runs[run_id] = run
             _current_run_id = run_id
-            _start_performance(run, graph["initial_state"], starting=True)
-            threading.Thread(target=_renew_robot_reservation, args=(run,), daemon=True).start()
-            return jsonify(_snapshot(run)), 202
+            try:
+                _start_performance(run, graph["initial_state"], starting=True)
+            except RuntimeError as exc:
+                _runs.pop(run_id)
+                _current_run_id = None
+                worker_error = str(exc)
+            else:
+                try:
+                    threading.Thread(target=_renew_robot_reservation, args=(run,), daemon=True).start()
+                except RuntimeError as exc:
+                    run["stop_event"].set()
+                    run["status"] = "stopped"
+                    run["error"] = "failed to start reservation monitor: " + str(exc)
+                    return jsonify(_snapshot(run)), 503
+                return jsonify(_snapshot(run)), 202
+        released = release_robot_reservation(run_id)
+        error = {"error": "failed to start playback worker", "detail": worker_error}
+        if not released:
+            error["cleanup_error"] = "robot reservation may remain until it expires"
+        return jsonify(error), 503
     finally:
         with _run_registry_lock:
             _starting = False
@@ -732,7 +763,10 @@ def signal_choreography_run(run_id):
             return jsonify({"error": f"Transition '{data['transition_id']}' not found in this run"}), 409
         if transition["from"] != run["state_id"]:
             return jsonify({"error": "transition does not start at current state"}), 409
-        _start_performance(run, transition["to"])
+        try:
+            _start_performance(run, transition["to"])
+        except RuntimeError as exc:
+            return jsonify({"error": "failed to start playback worker", "detail": str(exc)}), 503
         return jsonify(_snapshot(run)), 202
 
 

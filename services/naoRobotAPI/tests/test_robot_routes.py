@@ -178,6 +178,16 @@ class RobotRoutes(OfflineCase):
         self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
         self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 409)
 
+    def test_reservation_token_length_is_bounded(self):
+        oversized = "x" * (robot.MAX_RESERVATION_TOKEN_LENGTH + 1)
+        for method in ("post", "delete"):
+            self.assertEqual(getattr(self.client, method)("/control/reservation", json={"token": oversized}).status_code, 400)
+        self.assertIsNone(robot._reservation["token"])
+        self.assertEqual(robot._retired_tokens, set())
+        accepted = "x" * robot.MAX_RESERVATION_TOKEN_LENGTH
+        self.assertEqual(self.client.post("/control/reservation", json={"token": accepted}).status_code, 200)
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": accepted}).status_code, 200)
+
     def test_reservation_can_renew_during_long_robot_call(self):
         from robot.setting_pose import setting_pose_api
 
