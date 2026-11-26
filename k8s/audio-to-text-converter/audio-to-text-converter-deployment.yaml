@@ -20,6 +20,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9901
+          # whisperx loads the model on every request; one request with
+          # large-v1 needs about 2 GiB of process memory plus page cache.
+          resources:
+            requests:
+              memory: 3Gi
+            limits:
+              memory: 6Gi
           env:
             - name: FLASK_ENV
               value: "production"
