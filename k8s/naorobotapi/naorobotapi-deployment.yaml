@@ -23,6 +23,8 @@ spec:
         volumeMounts:
         - name: pictures
           mountPath: /images
+        - name: temperature-logs
+          mountPath: /logs/temperature
         env:
         - name: FLASK_ENV
           value: "production"
@@ -36,6 +38,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: TEMPERATURE_LOG_DIR
+          value: "/logs/temperature"
         readinessProbe:
           httpGet:
             path: /
@@ -53,6 +57,9 @@ spec:
         hostPath:
           path: /home/ubuntu/Pictures
           type: DirectoryOrCreate
+      - name: temperature-logs
+        persistentVolumeClaim:
+          claimName: temperature-logs-pvc
 ---
 apiVersion: v1
 kind: Service
