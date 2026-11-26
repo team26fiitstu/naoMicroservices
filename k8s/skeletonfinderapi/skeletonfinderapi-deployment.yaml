@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: skeletonfinderapi
-        image: berserkchmonya/skeleton-finder-api:latest
+        image: ghcr.io/team26fiitstu/skeleton-finder-api:sha-a106aee
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 6001

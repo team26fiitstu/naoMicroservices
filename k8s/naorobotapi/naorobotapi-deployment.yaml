@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: naorobotapi
-        image: berserkchmonya/nao-robot-api:latest
+        image: ghcr.io/team26fiitstu/nao-robot-api:sha-a106aee
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000

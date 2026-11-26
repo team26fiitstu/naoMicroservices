@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: exercise-config-service
-          image: berserkchmonya/exercise-config-service:latest
+          image: ghcr.io/team26fiitstu/exercise-config-service:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 7001

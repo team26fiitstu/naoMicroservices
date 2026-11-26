@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: audio-to-text-converter
-          image: ghcr.io/team26fiitstu/audio-to-text-converter:latest
+          image: ghcr.io/team26fiitstu/audio-to-text-converter:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9901
