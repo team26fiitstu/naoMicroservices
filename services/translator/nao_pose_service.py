@@ -34,7 +34,9 @@ from http_retry import request_with_retries
 POSE_API_URL = "http://%s:6001/media_pipe_pose/pose_from_image" % service_host("skeletonfinderapi")
 SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
 VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("naorobotapi")
+ROBOT_RESERVATION_URL = "http://%s:5000/control/reservation" % service_host("naorobotapi")
 EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
+_robot_run_context = threading.local()
 
 # name of unnamed exercise, Slovak UI
 DEFAULT_EXERCISE_NAME = "Nepomenované cvičenie"
@@ -114,7 +116,9 @@ def call_nao_set_pose(angles):
     Call NAO pose endpoint with the given angles.
     """
     payload = {"angles": angles}
-    resp = request_with_retries("POST", SET_POSE_URL, json=payload, timeout=15,
+    token = getattr(_robot_run_context, "token", None)
+    headers = {"X-Robot-Run-Token": token} if token else None
+    resp = request_with_retries("POST", SET_POSE_URL, json=payload, headers=headers, timeout=15,
                               idempotent=False)
     resp.raise_for_status()
     return resp.json()
@@ -125,11 +129,40 @@ def call_nao_voice_lines(voice_lines_configs):
     Call NAO to say voice line.
     """
     payload = {"voice_lines": voice_lines_configs}
-    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, timeout=15,
+    token = getattr(_robot_run_context, "token", None)
+    headers = {"X-Robot-Run-Token": token} if token else None
+    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, headers=headers, timeout=15,
                               idempotent=False,
                               max_attempts=1)  # a repeated voice line is audible: never retry
     resp.raise_for_status()
     return resp.json()
+
+
+def reserve_robot_for_run(run_id):
+    try:
+        resp = request_with_retries("POST", ROBOT_RESERVATION_URL,
+                                    json={"token": run_id}, timeout=5,
+                                    idempotent=True, max_attempts=2)
+        if resp.status_code == 409:
+            return jsonify({"error": "robot is reserved by another run"}), 409
+        resp.raise_for_status()
+        if resp.json().get("success") is not True:
+            raise ValueError("robot did not confirm reservation")
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        return jsonify({"error": "failed to reserve robot", "detail": str(exc)}), 502
+    return None
+
+
+def release_robot_reservation(run_id):
+    try:
+        resp = request_with_retries("DELETE", ROBOT_RESERVATION_URL,
+                                    json={"token": run_id}, timeout=5,
+                                    idempotent=False, max_attempts=1)
+        resp.raise_for_status()
+    except requests.RequestException:
+        app.logger.exception("failed to release robot reservation for run %s", run_id)
+        return False
+    return True
 
 
 def fetch_exercise(exercise_id, repetitions_override=None):
@@ -451,7 +484,9 @@ def exercise_run(exercise_id):
 
 
 # A translator process controls one robot and therefore one active run.
-_runs = {}  # run_id -> run; stopped runs remain queryable until process restart
+_runs = {}  # run_id -> run; only recent stopped runs remain queryable
+_stopped_run_ids = []
+MAX_STOPPED_RUNS = 50
 _current_run_id = None
 _starting = False
 _run_registry_lock = threading.Lock()
@@ -466,6 +501,50 @@ def _snapshot(run):
             "outgoing_transitions": [dict(t) for t in run["graph"]["transitions"]
                                      if t["from"] == state_id],
             "playback": run["playback"], "error": run["error"]}
+
+
+def _retain_stopped_run(run):
+    """Keep a bounded history for GET /run/<run_id> after completion."""
+    if run["retained"]:
+        return
+    run["retained"] = True
+    _stopped_run_ids.append(run["run_id"])
+    if len(_stopped_run_ids) > MAX_STOPPED_RUNS:
+        _runs.pop(_stopped_run_ids.pop(0), None)
+
+
+def _take_reservation_release(run):
+    if run["reservation_released"]:
+        return None
+    run["reservation_released"] = True
+    return run["run_id"]
+
+
+def _renew_robot_reservation(run):
+    global _current_run_id
+    with app.app_context():
+        while not run["stop_event"].wait(20):
+            failure = reserve_robot_for_run(run["run_id"])
+            if failure is None:
+                continue
+            token_to_release = None
+            with _run_registry_lock:
+                if run["status"] == "stopped":
+                    return
+                run["error"] = "robot reservation was lost"
+                run["stop_event"].set()
+                run["status"] = "stopped"
+                if run["worker_done"].is_set():
+                    if _current_run_id == run["run_id"]:
+                        _current_run_id = None
+                    _retain_stopped_run(run)
+                    token_to_release = _take_reservation_release(run)
+            if token_to_release:
+                released = release_robot_reservation(token_to_release)
+                if not released:
+                    with _run_registry_lock:
+                        run["error"] += "; failed to release robot reservation"
+            return
 
 
 def _load_graph(choreography_id):
@@ -514,32 +593,54 @@ def _perform_state_in_context(run, target, starting):
     global _current_run_id
     try:
         with _robot_playback_lock:
-            result, failure = play_exercise(target, stop_on_error=True,
-                                            cancelled=run["stop_event"].is_set)
+            _robot_run_context.token = run["run_id"]
+            try:
+                result, failure = play_exercise(target, stop_on_error=True,
+                                                cancelled=run["stop_event"].is_set)
+            finally:
+                del _robot_run_context.token
     except Exception:
         app.logger.exception("choreography playback failed for run %s", run["run_id"])
         result, failure = None, (jsonify({"error": "unexpected playback failure"}), 502)
+    token_to_release = None
     with _run_registry_lock:
         run["playback"] = result
+        if failure:
+            playback_error = failure[0].get_json()["error"]
+        elif result is not None and any(item["status"] == "error" for item in result["results"]):
+            playback_error = "robot playback failed; some commands may have completed"
+        else:
+            playback_error = None
+        if run["error"]:
+            if playback_error:
+                run["error"] += "; " + playback_error
+        else:
+            run["error"] = playback_error
+        if run["error"] and not starting:
+            run["state_id"] = run["source_state_id"]
         if run["stop_event"].is_set():
             run["status"] = "stopped"
-        elif failure:
-            if not starting:
-                run["state_id"] = run["source_state_id"]
-            run["error"] = failure[0].get_json()["error"]
-            run["status"] = "stopped" if starting else "waiting"
-        elif any(item["status"] == "error" for item in result["results"]):
-            if not starting:
-                run["state_id"] = run["source_state_id"]
-            run["error"] = "robot playback failed; some commands may have completed"
+        elif run["error"]:
             run["status"] = "stopped" if starting else "waiting"
         else:
-            run["error"] = None
             run["status"] = "waiting"
         run["source_state_id"] = None
-        run["worker_done"].set()
-        if run["status"] == "stopped" and _current_run_id == run["run_id"]:
-            _current_run_id = None
+        if run["status"] == "stopped":
+            run["stop_event"].set()
+            token_to_release = _take_reservation_release(run)
+        else:
+            run["worker_done"].set()
+    if token_to_release:
+        released = release_robot_reservation(token_to_release)
+    if token_to_release:
+        with _run_registry_lock:
+            if not released:
+                release_error = "failed to release robot reservation; it will expire automatically"
+                run["error"] = run["error"] + "; " + release_error if run["error"] else release_error
+            run["worker_done"].set()
+            if _current_run_id == run["run_id"]:
+                _current_run_id = None
+            _retain_stopped_run(run)
 
 
 def _start_performance(run, target, starting=False):
@@ -565,16 +666,21 @@ def start_choreography_run(choreography_id):
         graph, failure = _load_graph(choreography_id)
         if failure:
             return failure
+        run_id = uuid.uuid4().hex
+        failure = reserve_robot_for_run(run_id)
+        if failure:
+            return failure
         with _run_registry_lock:
-            run_id = uuid.uuid4().hex
             run = {"run_id": run_id, "choreography_id": choreography_id,
                    "graph": graph, "state_id": graph["initial_state"],
                    "status": "performing", "stop_event": threading.Event(),
                    "worker_done": threading.Event(), "source_state_id": None,
-                   "playback": None, "error": None}
+                   "playback": None, "error": None, "retained": False,
+                   "reservation_released": False}
             _runs[run_id] = run
             _current_run_id = run_id
             _start_performance(run, graph["initial_state"], starting=True)
+            threading.Thread(target=_renew_robot_reservation, args=(run,), daemon=True).start()
             return jsonify(_snapshot(run)), 202
     finally:
         with _run_registry_lock:
@@ -638,6 +744,7 @@ def goto_choreography_state(run_id):
 @app.route("/run/<run_id>/stop", methods=["POST"])
 def stop_choreography_run(run_id):
     global _current_run_id
+    token_to_release = None
     with _run_registry_lock:
         run = _runs.get(run_id)
         if run is None:
@@ -649,6 +756,15 @@ def stop_choreography_run(run_id):
         # Keep the robot reserved until an in-flight command finishes.
         if run["worker_done"].is_set():
             _current_run_id = None
+            _retain_stopped_run(run)
+            token_to_release = _take_reservation_release(run)
+    if token_to_release:
+        released = release_robot_reservation(token_to_release)
+        if not released:
+            with _run_registry_lock:
+                release_error = "failed to release robot reservation; it will expire automatically"
+                run["error"] = run["error"] + "; " + release_error if run["error"] else release_error
+    with _run_registry_lock:
         return jsonify(_snapshot(run)), 200
 
 

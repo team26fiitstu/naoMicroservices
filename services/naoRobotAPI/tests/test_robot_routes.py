@@ -1,6 +1,7 @@
 """Offline HTTP tests for naoRobotAPI routes."""
 import json
 import sys
+import threading
 import types
 from unittest.mock import Mock, patch
 
@@ -49,6 +50,7 @@ class RobotRoutes(OfflineCase):
         super().setUp()
         fake_proxies[:] = []
         FakeProxy.fail_on_motion = False
+        robot._reservation.update(token=None, expires_at=0)
         self.client = robot.app.test_client()
 
     def test_health_and_pose(self):
@@ -109,3 +111,109 @@ class RobotRoutes(OfflineCase):
         self.assertEqual(fake_proxies[0].service, "ALMotion")
         self.assertEqual(fake_proxies[0].calls[0][0], "stiffnessInterpolation")
         self.assertEqual(fake_proxies[0].calls[1][0], "angleInterpolation")
+
+    def test_pose_and_voice_requests_share_robot_lock(self):
+        from robot.setting_pose import setting_pose_api
+        from robot.voice_lines import voice_lines_api
+
+        pose_entered = threading.Event()
+        release_pose = threading.Event()
+        voice_entered = threading.Event()
+        outcomes = []
+
+        def slow_pose(angles):
+            pose_entered.set()
+            release_pose.wait(3)
+
+        def speak(config):
+            voice_entered.set()
+
+        with patch.object(setting_pose_api, "set_nao_pose", side_effect=slow_pose), \
+                patch.object(voice_lines_api, "set_voice_lines", side_effect=speak):
+            pose_thread = threading.Thread(target=lambda: outcomes.append(
+                robot.app.test_client().post("/setting_pose/setPose", json={"angles": [0.1] * 22}).status_code))
+            voice_thread = threading.Thread(target=lambda: outcomes.append(
+                robot.app.test_client().post("/voiceLines/applyVoiceLine", json={"voice_lines": {}}).status_code))
+            pose_thread.start()
+            try:
+                self.assertTrue(pose_entered.wait(3))
+                voice_thread.start()
+                self.assertFalse(voice_entered.wait(0.1))
+            finally:
+                release_pose.set()
+                pose_thread.join(3)
+                if voice_thread.ident is not None:
+                    voice_thread.join(3)
+
+        self.assertEqual(outcomes, [200, 200])
+        self.assertTrue(voice_entered.is_set())
+
+    def test_choreography_reservation_blocks_other_robot_commands(self):
+        from robot.voice_lines import voice_lines_api
+
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-b"}).status_code, 409)
+        self.assertEqual(self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22}).status_code, 409)
+        with patch.object(voice_lines_api, "set_voice_lines") as speak:
+            self.assertEqual(self.client.post("/voiceLines/applyVoiceLine", json={"voice_lines": {}}).status_code, 409)
+            speak.assert_not_called()
+        result = self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22},
+                                  headers={"X-Robot-Run-Token": "run-a"})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-b"}).status_code, 409)
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22}).status_code, 200)
+
+    def test_reservation_can_renew_during_long_robot_call(self):
+        from robot.setting_pose import setting_pose_api
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_pose(angles):
+            entered.set()
+            release.wait(3)
+
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        with patch.object(setting_pose_api, "set_nao_pose", side_effect=slow_pose):
+            worker = threading.Thread(target=lambda: robot.app.test_client().post(
+                "/setting_pose/setPose", json={"angles": [0.1] * 22},
+                headers={"X-Robot-Run-Token": "run-a"}))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 200)
+            finally:
+                release.set()
+                worker.join(3)
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
+
+    def test_reservation_rejects_in_progress_direct_command(self):
+        from robot.setting_pose import setting_pose_api
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_pose(angles):
+            entered.set()
+            release.wait(3)
+
+        with patch.object(setting_pose_api, "set_nao_pose", side_effect=slow_pose):
+            worker = threading.Thread(target=lambda: robot.app.test_client().post(
+                "/setting_pose/setPose", json={"angles": [0.1] * 22}))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 409)
+            finally:
+                release.set()
+                worker.join(3)
+        self.assertIsNone(robot._reservation["token"])
+
+    def test_reservation_expires_if_owner_disappears(self):
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        after_expiry = robot._reservation["expires_at"] + 1
+        with patch.object(robot.time, "time", return_value=after_expiry):
+            result = self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22})
+        self.assertEqual(result.status_code, 200)
+        self.assertIsNone(robot._reservation["token"])

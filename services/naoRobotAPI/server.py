@@ -8,8 +8,15 @@ if os.environ.get("COMPOSE_NETWORK", "false").lower() != "true" and os.environ.g
     os.environ["NAO_IP"] = "127.0.0.1"
 
 import sys
-from flask import Flask
+import threading
+import time
+from flask import Flask, g, request, jsonify
 import flask_cors
+
+try:
+    string_types = (basestring,)
+except NameError:
+    string_types = (str,)
 
 from robot_module_testing.test_api import test_api
 from robot.setting_pose.setting_pose_api import setting_pose_api
@@ -28,6 +35,71 @@ app.register_blueprint(test_api, url_prefix="/tests")
 app.register_blueprint(setting_pose_api, url_prefix="/setting_pose")
 app.register_blueprint(voice_lines_api, url_prefix="/voiceLines")
 app.register_blueprint(temperature_api, url_prefix="/temperature")
+
+# All robot-changing routes share one lock, including commands from translator,
+# voiceCommandAPI, and the direct robot API. Keep it through the NAOqi call.
+_robot_command_lock = threading.Lock()
+_reservation_lock = threading.Lock()
+_robot_command_blueprints = frozenset(("test_api", "setting_pose_api", "voice_lines_api"))
+_reservation = {"token": None, "expires_at": 0}
+RESERVATION_SECONDS = 120
+
+
+def _reserved_token():
+    if _reservation["token"] and time.time() >= _reservation["expires_at"]:
+        _reservation["token"] = None
+        _reservation["expires_at"] = 0
+    return _reservation["token"]
+
+
+@app.before_request
+def serialize_robot_commands():
+    if request.blueprint in _robot_command_blueprints:
+        _robot_command_lock.acquire()
+        g.robot_command_lock_held = True
+        with _reservation_lock:
+            token = _reserved_token()
+        if token and request.headers.get("X-Robot-Run-Token") != token:
+            return jsonify({"error": "robot is reserved by a choreography run"}), 409
+
+
+@app.teardown_request
+def release_robot_command_lock(error):
+    if getattr(g, "robot_command_lock_held", False):
+        _robot_command_lock.release()
+
+
+@app.route("/control/reservation", methods=["POST", "DELETE"])
+def robot_reservation():
+    data = request.get_json(silent=True)
+    token = data.get("token") if isinstance(data, dict) else None
+    if not isinstance(token, string_types) or not token:
+        return jsonify({"error": "token is required"}), 400
+    if request.method == "POST":
+        # Renewal must work while a long robot call holds the command lock.
+        with _reservation_lock:
+            if _reserved_token() == token:
+                _reservation["expires_at"] = time.time() + RESERVATION_SECONDS
+                return jsonify({"success": True}), 200
+        if not _robot_command_lock.acquire(False):
+            return jsonify({"error": "robot command is in progress"}), 409
+        try:
+            with _reservation_lock:
+                owner = _reserved_token()
+                if owner and owner != token:
+                    return jsonify({"error": "robot is reserved by another run"}), 409
+                _reservation["token"] = token
+                _reservation["expires_at"] = time.time() + RESERVATION_SECONDS
+        finally:
+            _robot_command_lock.release()
+    else:
+        with _robot_command_lock:
+            with _reservation_lock:
+                if _reserved_token() != token:
+                    return jsonify({"error": "reservation is not owned by this run"}), 409
+                _reservation["token"] = None
+                _reservation["expires_at"] = 0
+    return jsonify({"success": True}), 200
 
 
 @app.route("/", methods=["GET"])

@@ -32,10 +32,17 @@ class ChoreographyRun(OfflineCase):
         super().setUp()
         with translator._run_registry_lock:
             translator._runs.clear()
+            translator._stopped_run_ids.clear()
             translator._current_run_id = None
             translator._starting = False
         self.client = translator.app.test_client()
         self.calls = []
+        self.reserve = patch.object(translator, "reserve_robot_for_run", return_value=None)
+        self.release_reservation = patch.object(translator, "release_robot_reservation", return_value=True)
+        self.reserve_call = self.reserve.start()
+        self.release_call = self.release_reservation.start()
+        self.addCleanup(self.reserve.stop)
+        self.addCleanup(self.release_reservation.stop)
 
         def upstream(method, url, **kwargs):
             if "/choreography/" in url:
@@ -55,6 +62,12 @@ class ChoreographyRun(OfflineCase):
         self.speak.start()
         self.addCleanup(self.move.stop)
         self.addCleanup(self.speak.stop)
+
+    def tearDown(self):
+        for run in list(translator._runs.values()):
+            self.assertTrue(run["worker_done"].wait(3), "playback worker did not finish")
+            run["stop_event"].set()  # end the fake lease renewal thread
+        super().tearDown()
 
     def wait_status(self, run_id, status):
         deadline = time.monotonic() + 3
@@ -113,8 +126,20 @@ class ChoreographyRun(OfflineCase):
         self.assertEqual(self.client.get("/run/current").status_code, 404)
         self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 409)
         self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
+        self.release_call.assert_called_once()
         self.assertEqual(self.start(OTHER).status_code, 202)
         self.wait_status(self.run_id, "waiting")
+
+    def test_robot_reservation_failure_does_not_create_run(self):
+        for status in (409, 502):
+            with self.subTest(status=status), patch.object(
+                translator, "reserve_robot_for_run",
+                side_effect=lambda run_id: (translator.jsonify({"error": "robot unavailable"}), status),
+            ):
+                self.assertEqual(self.start().status_code, status)
+                self.assertEqual(self.client.get("/run/current").status_code, 404)
+                self.assertEqual(translator._runs, {})
+        self.release_call.assert_not_called()
 
     def test_invalid_unknown_empty_and_unavailable(self):
         self.assertEqual(self.start("bad").status_code, 400)
@@ -203,6 +228,73 @@ class ChoreographyRun(OfflineCase):
             while time.monotonic() < deadline and not translator._runs[self.run_id]["worker_done"].is_set():
                 time.sleep(0.005)
         self.assertEqual(self.calls, [("voice", {"text": FIRST}), ("pose", [1])])
+
+    def test_stop_preserves_in_flight_robot_error(self):
+        entered = threading.Event()
+        release = threading.Event()
+
+        def failed_pose(angles):
+            entered.set()
+            release.wait(3)
+            raise requests.Timeout("robot timeout after stop")
+
+        with patch.object(translator, "call_nao_set_pose", side_effect=failed_pose):
+            self.start()
+            self.assertTrue(entered.wait(3))
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
+            release.set()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and not translator._runs[self.run_id]["worker_done"].is_set():
+                time.sleep(0.005)
+        result = self.client.get(f"/run/{self.run_id}").json
+        self.assertEqual(result["status"], "stopped")
+        self.assertIn("robot playback failed", result["error"])
+        self.assertEqual(result["playback"]["results"][-1]["status"], "error")
+
+    def test_stopped_run_history_is_bounded(self):
+        run_ids = []
+        with patch.object(translator, "MAX_STOPPED_RUNS", 2):
+            for _ in range(3):
+                self.start()
+                self.wait_status(self.run_id, "waiting")
+                run_ids.append(self.run_id)
+                self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
+        self.assertEqual(self.client.get(f"/run/{run_ids[0]}").status_code, 404)
+        self.assertEqual([self.client.get(f"/run/{run_id}").status_code for run_id in run_ids[1:]], [200, 200])
+        self.assertEqual(len(translator._runs), 2)
+
+    def test_failed_reservation_release_is_visible(self):
+        self.start()
+        self.wait_status(self.run_id, "waiting")
+        self.release_call.return_value = False
+        stopped = self.client.post(f"/run/{self.run_id}/stop")
+        self.assertEqual(stopped.status_code, 200)
+        self.assertEqual(stopped.json["status"], "stopped")
+        self.assertIn("failed to release robot reservation", stopped.json["error"])
+        self.assertEqual(self.client.get("/run/current").status_code, 404)
+
+    def test_reservation_loss_during_playback_remains_reported(self):
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_pose(angles):
+            entered.set()
+            release.wait(3)
+            return {"success": True}
+
+        with patch.object(translator, "call_nao_set_pose", side_effect=slow_pose):
+            self.start()
+            self.assertTrue(entered.wait(3))
+            with translator._run_registry_lock:
+                run = translator._runs[self.run_id]
+                run["error"] = "robot reservation was lost"
+                run["stop_event"].set()
+                run["status"] = "stopped"
+            release.set()
+            self.assertTrue(run["worker_done"].wait(3))
+        current = self.client.get(f"/run/{self.run_id}").json
+        self.assertEqual(current["status"], "stopped")
+        self.assertEqual(current["error"], "robot reservation was lost")
 
     def test_stop_during_second_performance_keeps_robot_reserved(self):
         self.start()

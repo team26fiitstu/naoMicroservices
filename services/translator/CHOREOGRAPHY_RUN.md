@@ -44,9 +44,16 @@ motion or speech cannot be undone. Poll `GET /run/<run_id>`
 for the outcome rather than treating `202` as completed playback.
 
 `400` means invalid input, `404` an unknown choreography, run or state ID or no
-active run, `409` an invalid transition or conflicting operation, and `502` a
-failed choreography fetch or invalid graph.
+active run, `409` an invalid transition, conflicting operation or busy robot,
+and `502` an unavailable service or invalid graph.
 An empty or unavailable exercise is discovered in the worker and reported in
 the run's `error` field. Only one run may be active in a translator process.
-State and locks are process-local and are lost on restart. A physical NAO test
-is still required before live use.
+The last 50 stopped runs remain queryable; older run IDs return `404`. State and
+locks are process-local and are lost on restart. A run reserves naoRobotAPI
+until it stops; other robot commands receive `409`. The reservation is renewed
+while the run is active and expires after 120 seconds if translator disappears.
+If renewal fails, the run stops and reports the lost reservation. If release
+fails, the response reports it; naoRobotAPI clears the reservation when its
+lease expires.
+Robot-level reservation and serialization assume one naoRobotAPI process. A
+physical NAO test is still required before live use.
