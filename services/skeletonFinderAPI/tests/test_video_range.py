@@ -10,10 +10,11 @@ MODEL_PATH = ROOT / "services/skeletonFinderAPI/server/third_party_pose_estimati
 
 
 class FakeCapture:
-    """Video of `frames` frames at `fps`; each frame is its index."""
+    """Video of `frames` frames at `fps`; each frame is its index. Records decoded frames."""
 
-    def __init__(self, frames, fps):
-        self.frames, self.fps, self.position = frames, fps, 0
+    def __init__(self, frames, fps, seekable=True):
+        self.frames, self.fps, self.seekable = frames, fps, seekable
+        self.position, self.decoded = 0, []
 
     def isOpened(self):
         return True
@@ -21,11 +22,18 @@ class FakeCapture:
     def read(self):
         if self.position >= self.frames:
             return False, None
+        self.decoded.append(self.position)
         self.position += 1
         return True, self.position - 1
 
+    def set(self, prop, value):
+        if prop != "pos_frames" or not self.seekable:
+            return False
+        self.position = min(int(value), self.frames)
+        return True
+
     def get(self, prop):
-        return self.fps if prop == "fps" else 640
+        return {"fps": self.fps, "pos_frames": self.position}.get(prop, 640)
 
     def release(self):
         pass
@@ -33,7 +41,7 @@ class FakeCapture:
 
 def load_model():
     fakes = {
-        "cv2": types.SimpleNamespace(CAP_PROP_FPS="fps", VideoWriter=object),
+        "cv2": types.SimpleNamespace(CAP_PROP_FPS="fps", CAP_PROP_POS_FRAMES="pos_frames", VideoWriter=object),
         "mediapipe": types.SimpleNamespace(solutions=types.SimpleNamespace(drawing_utils=None, pose=None)),
         "numpy": types.ModuleType("numpy"),
     }
@@ -44,9 +52,9 @@ def load_model():
 model = load_model()
 
 
-def processed_frames(frames=300, fps=30, **options):
+def processed_frames(frames=300, fps=30, capture=None, **options):
     """Indices of frames sent to pose estimation."""
-    model.cv2.VideoCapture = lambda source: FakeCapture(frames, fps)
+    model.cv2.VideoCapture = lambda source: capture or FakeCapture(frames, fps)
 
     def process(frame, *args):
         yield frame
@@ -80,6 +88,21 @@ class VideoRange(unittest.TestCase):
 
     def test_range_past_video_end_gives_no_frames(self):
         self.assertEqual(processed_frames(start_seconds=20), [])
+
+    def test_range_start_is_seeked_not_decoded(self):
+        capture = FakeCapture(300, 30)
+        self.assertEqual(processed_frames(capture=capture, start_seconds=2, end_seconds=4), [60, 90, 120])
+        self.assertEqual(capture.decoded[0], 60)
+
+    def test_seek_lands_before_fractional_start(self):
+        capture = FakeCapture(300, 29.97)
+        self.assertEqual(processed_frames(capture=capture, start_seconds=2), list(range(60, 300, 30)))
+        self.assertEqual(capture.decoded[0], 59)
+
+    def test_unseekable_video_decodes_from_start(self):
+        capture = FakeCapture(300, 30, seekable=False)
+        self.assertEqual(processed_frames(capture=capture, start_seconds=2, end_seconds=4), [60, 90, 120])
+        self.assertEqual(capture.decoded[0], 0)
 
     def test_seconds_limit_counts_from_range_start(self):
         self.assertEqual(processed_frames(start_seconds=5, number_seconds_to_process=3), [150, 180, 210, 240])

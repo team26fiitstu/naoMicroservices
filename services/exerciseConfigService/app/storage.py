@@ -29,7 +29,8 @@ config.json structure:
     "created_at": "2026-03-16T12:00:00",
     "pose_engine": "mediapipe",        // or "yolo"
     "repetitions": 3,
-    "frame_sequence": [0, 1, 2, 1, 0] // playback order — can repeat/reorder frames
+    "frame_sequence": [0, 1, 2, 1, 0], // playback order — can repeat/reorder frames
+    "video_range": {"start": 2.0, "end": 5.5} // optional, selected part of original video, end null = until end
   }
 
 frame_NNN.json structure:
@@ -125,7 +126,7 @@ def exercise_exists(exercise_id: str) -> bool:
 
 
 def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
-                    media_bytes: bytes = None, media_ext: str = ".mp4") -> dict:
+                    media_bytes: bytes = None, media_ext: str = ".mp4", video_range: dict = None) -> dict:
     """
     Create a new exercise on disk.
 
@@ -136,6 +137,7 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
         pose_engine: "mediapipe" or "yolo".
         media_bytes: Raw bytes of the original uploaded file, or None.
         media_ext:   File extension for the media file, e.g. ".mp4" or ".jpg".
+        video_range: Selected {"start": seconds, "end": seconds or None} of the original video, or None.
 
     Returns:
         The config dict of the newly created exercise.
@@ -170,6 +172,8 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
         "repetitions": 1,
         "frame_sequence": list(range(len(frames))),
     }
+    if video_range is not None:
+        config["video_range"] = video_range
     _write_json(config_path(exercise_id), config)
 
     return config

@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import requests
 from flask import Blueprint, request, jsonify, send_file
 import io
@@ -29,16 +30,36 @@ VOICE_COMMAND_API_URL = "http://%s:8000" % service_host("voicecommandapi")
 exercise_bp = Blueprint("exercise", __name__, url_prefix="/exercise")
 
 
+def _is_seconds(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+
+
+def validate_video_range(value):
+    """Optional {"start", "end"} in seconds, end None means until video end."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("'video_range' must be an object")
+    start, end = value.get("start"), value.get("end")
+    if not _is_seconds(start):
+        raise ValueError("'video_range.start' must be a non-negative number")
+    if end is not None and (not _is_seconds(end) or end <= start):
+        raise ValueError("'video_range.end' must be null or a number greater than start")
+    return {"start": start, "end": end}
+
+
 # ---------------------------------------------------------------------------
 # POST /exercise/create
 # Accepts either:
 #   a) application/json:
-#      {"name": "Arm Wave", "frames": [...], "pose_engine": "mediapipe"}
+#      {"name": "Arm Wave", "frames": [...], "pose_engine": "mediapipe",
+#       "video_range": {"start": 2.0, "end": 5.5}}
 #
 #   b) multipart/form-data:
 #      name        — string
 #      frames      — JSON string
 #      pose_engine — string (optional)
+#      video_range — JSON string (optional)
 #      media       — file (optional)
 # ---------------------------------------------------------------------------
 @exercise_bp.route("/create", methods=["POST"])
@@ -47,6 +68,7 @@ def create():
         name = request.form.get("name")
         frames_raw = request.form.get("frames")
         pose_engine = request.form.get("pose_engine", "mediapipe")
+        video_range_raw = request.form.get("video_range")
 
         if not name:
             return jsonify({"error": "'name' is required"}), 400
@@ -56,6 +78,10 @@ def create():
             frames = json.loads(frames_raw)
         except json.JSONDecodeError:
             return jsonify({"error": "'frames' must be valid JSON"}), 400
+        try:
+            video_range = None if video_range_raw is None else json.loads(video_range_raw)
+        except json.JSONDecodeError:
+            return jsonify({"error": "'video_range' must be valid JSON"}), 400
 
         media_bytes = None
         media_ext = ".bin"
@@ -72,6 +98,7 @@ def create():
         name = data.get("name")
         frames = data.get("frames")
         pose_engine = data.get("pose_engine", "mediapipe")
+        video_range = data.get("video_range")
         media_bytes = None
         media_ext = ".bin"
 
@@ -79,6 +106,10 @@ def create():
         return jsonify({"error": "'name' is required"}), 400
     if not isinstance(frames, list) or len(frames) == 0:
         return jsonify({"error": "'frames' must be a non-empty list"}), 400
+    try:
+        video_range = validate_video_range(video_range)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     config = create_exercise(
         name=name,
@@ -86,6 +117,7 @@ def create():
         pose_engine=pose_engine,
         media_bytes=media_bytes,
         media_ext=media_ext,
+        video_range=video_range,
     )
     return jsonify(config), 201
 

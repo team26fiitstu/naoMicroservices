@@ -90,6 +90,9 @@ def evaluate_pose_from_video_mediapipe(source: str, min_detection_confidence: fl
 
         processed = 0
         frame_number = 0
+        # seek near range start instead of decoding earlier frames, loop still skips frames before it
+        if start_seconds > 0 and cap.set(cv2.CAP_PROP_POS_FRAMES, int(start_seconds * video_fps)):
+            frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
 
         while cap.isOpened:  # loop until cap opened or video not complete
             print("Frame {} Processing".format(frame_number + 1))

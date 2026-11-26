@@ -103,21 +103,30 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(process.call_args.kwargs["number_frames_per_sec"], 2)
         self.assertEqual(process.call_args.kwargs["number_seconds_to_process"], 5)
 
-    def test_video_range_reaches_pose_processing(self):
+    def test_video_range_reaches_pose_processing_and_is_saved(self):
         cases = (
-            ({}, (0, -1)),
-            ({"start": "2.5", "end": "7.25"}, (2.5, 7.25)),
-            ({"start": "3"}, (3, -1)),
+            ({}, (0, -1), {"start": 0, "end": None}),
+            ({"start": "2.5", "end": "7.25"}, (2.5, 7.25), {"start": 2.5, "end": 7.25}),
+            ({"start": "3"}, (3, -1), {"start": 3, "end": None}),
         )
-        for fields, expected in cases:
+        for fields, expected, saved in cases:
             with self.subTest(fields=fields):
                 with patch.object(translator, "process_video_bytes", return_value=dict(SUMMARY)) as process, \
                         patch.object(translator, "translate_arms", return_value=ANGLES), \
-                        patch.object(translator, "call_exercise_create", return_value={"id": "ex1"}):
+                        patch.object(translator, "call_exercise_create", return_value={"id": "ex1"}) as create:
                     result = self.upload("/exercise/from_video", "video", **fields)
                 self.assertEqual(result.status_code, 201)
                 kwargs = process.call_args.kwargs
                 self.assertEqual((kwargs["start_seconds"], kwargs["end_seconds"]), expected)
+                self.assertEqual(create.call_args.kwargs["video_range"], saved)
+
+    def test_video_range_is_sent_to_config_service(self):
+        with patch.object(translator, "request_with_retries", return_value=response({"id": "ex1"})) as send:
+            translator.call_exercise_create("demo", [], video_range={"start": 2.5, "end": None})
+        self.assertEqual(send.call_args.kwargs["files"]["video_range"][1], '{"start": 2.5, "end": null}')
+        with patch.object(translator, "request_with_retries", return_value=response({"id": "ex1"})) as send:
+            translator.call_exercise_create("demo", [])
+        self.assertNotIn("video_range", send.call_args.kwargs["files"])
 
     def test_invalid_video_range_is_rejected_before_processing(self):
         cases = (
