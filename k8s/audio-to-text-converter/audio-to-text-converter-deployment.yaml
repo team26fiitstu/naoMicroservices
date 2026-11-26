@@ -20,11 +20,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9901
-          # whisperx loads the model on every request; one request with
-          # large-v1 needs about 2 GiB of process memory plus page cache.
+          # Measured with large-v1: one request needs about 2 GiB of process
+          # memory. The service loads the model on every request and memory
+          # is not always freed, so the pod can reach the limit after a few
+          # requests and be restarted.
           resources:
             requests:
-              memory: 3Gi
+              memory: 4Gi
             limits:
               memory: 6Gi
           env:
