@@ -31,5 +31,8 @@ the reservation while its run is active and releases it after stopping. If
 translator disappears, the reservation expires after 120 seconds. This token
 coordinates commands; it is not an authentication credential. Run one robot
 API process per robot, since locks and reservations are kept in process memory.
+Release also retires the token, so a delayed renewal cannot reserve the robot
+again. The service remembers the most recent 1000 retired tokens in memory;
+`DELETE` is safe to repeat even if the lease has expired.
 
 Pose and speech commands need a reachable robot at `NAO_IP:NAO_PORT`. `setPoseMediapipe` currently forwards the raw request body to its handler;

@@ -51,6 +51,8 @@ class RobotRoutes(OfflineCase):
         fake_proxies[:] = []
         FakeProxy.fail_on_motion = False
         robot._reservation.update(token=None, expires_at=0)
+        robot._retired_tokens.clear()
+        robot._retired_token_order.clear()
         self.client = robot.app.test_client()
 
     def test_health_and_pose(self):
@@ -162,7 +164,19 @@ class RobotRoutes(OfflineCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-b"}).status_code, 409)
         self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 409)
         self.assertEqual(self.client.post("/setting_pose/setPose", json={"angles": [0.1] * 22}).status_code, 200)
+
+    def test_release_before_delayed_renewal_cannot_restore_reservation(self):
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 409)
+        self.assertIsNone(robot._reservation["token"])
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-b"}).status_code, 200)
+
+    def test_release_without_active_lease_retires_delayed_token(self):
+        self.assertEqual(self.client.delete("/control/reservation", json={"token": "run-a"}).status_code, 200)
+        self.assertEqual(self.client.post("/control/reservation", json={"token": "run-a"}).status_code, 409)
 
     def test_reservation_can_renew_during_long_robot_call(self):
         from robot.setting_pose import setting_pose_api

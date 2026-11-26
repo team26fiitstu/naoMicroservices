@@ -10,6 +10,7 @@ if os.environ.get("COMPOSE_NETWORK", "false").lower() != "true" and os.environ.g
 import sys
 import threading
 import time
+from collections import deque
 from flask import Flask, g, request, jsonify
 import flask_cors
 
@@ -43,6 +44,9 @@ _reservation_lock = threading.Lock()
 _robot_command_blueprints = frozenset(("test_api", "setting_pose_api", "voice_lines_api"))
 _reservation = {"token": None, "expires_at": 0}
 RESERVATION_SECONDS = 120
+RETIRED_TOKEN_LIMIT = 1000
+_retired_tokens = set()
+_retired_token_order = deque()
 
 
 def _reserved_token():
@@ -50,6 +54,14 @@ def _reserved_token():
         _reservation["token"] = None
         _reservation["expires_at"] = 0
     return _reservation["token"]
+
+
+def _retire_token(token):
+    if token not in _retired_tokens:
+        _retired_tokens.add(token)
+        _retired_token_order.append(token)
+        if len(_retired_token_order) > RETIRED_TOKEN_LIMIT:
+            _retired_tokens.remove(_retired_token_order.popleft())
 
 
 @app.before_request
@@ -78,6 +90,8 @@ def robot_reservation():
     if request.method == "POST":
         # Renewal must work while a long robot call holds the command lock.
         with _reservation_lock:
+            if token in _retired_tokens:
+                return jsonify({"error": "reservation was already released"}), 409
             if _reserved_token() == token:
                 _reservation["expires_at"] = time.time() + RESERVATION_SECONDS
                 return jsonify({"success": True}), 200
@@ -85,6 +99,8 @@ def robot_reservation():
             return jsonify({"error": "robot command is in progress"}), 409
         try:
             with _reservation_lock:
+                if token in _retired_tokens:
+                    return jsonify({"error": "reservation was already released"}), 409
                 owner = _reserved_token()
                 if owner and owner != token:
                     return jsonify({"error": "robot is reserved by another run"}), 409
@@ -95,10 +111,13 @@ def robot_reservation():
     else:
         with _robot_command_lock:
             with _reservation_lock:
-                if _reserved_token() != token:
+                owner = _reserved_token()
+                _retire_token(token)
+                if owner is not None and owner != token:
                     return jsonify({"error": "reservation is not owned by this run"}), 409
-                _reservation["token"] = None
-                _reservation["expires_at"] = 0
+                if owner == token:
+                    _reservation["token"] = None
+                    _reservation["expires_at"] = 0
     return jsonify({"success": True}), 200
 
 

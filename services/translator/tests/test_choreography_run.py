@@ -273,6 +273,53 @@ class ChoreographyRun(OfflineCase):
         self.assertIn("failed to release robot reservation", stopped.json["error"])
         self.assertEqual(self.client.get("/run/current").status_code, 404)
 
+    def test_stop_waits_for_in_flight_reservation_renewal(self):
+        self.start()
+        self.wait_status(self.run_id, "waiting")
+        run = translator._runs[self.run_id]
+        remote = {"token": self.run_id}
+        renewing = threading.Event()
+        finish_renewal = threading.Event()
+        stop_finished = threading.Event()
+        stop_status = []
+
+        def slow_renew(run_id):
+            renewing.set()
+            self.assertTrue(finish_renewal.wait(3))
+            remote["token"] = run_id
+            return None
+
+        def release(run_id):
+            self.assertEqual(remote["token"], run_id)
+            remote["token"] = None
+            return True
+
+        def stop():
+            stop_status.append(translator.app.test_client().post(f"/run/{self.run_id}/stop").status_code)
+            stop_finished.set()
+
+        self.reserve_call.side_effect = slow_renew
+        self.release_call.side_effect = release
+        renew_thread = threading.Thread(target=translator._renew_run_reservation, args=(run,))
+        stop_thread = threading.Thread(target=stop)
+        renew_thread.start()
+        try:
+            self.assertTrue(renewing.wait(3))
+            stop_thread.start()
+            self.assertTrue(run["stop_event"].wait(3))
+            self.assertFalse(stop_finished.is_set())
+        finally:
+            finish_renewal.set()
+            renew_thread.join(3)
+            if stop_thread.ident is not None:
+                stop_thread.join(3)
+
+        self.assertEqual(stop_status, [200])
+        self.assertIsNone(remote["token"])
+        renew_count = self.reserve_call.call_count
+        self.assertIsNone(translator._renew_run_reservation(run))
+        self.assertEqual(self.reserve_call.call_count, renew_count)
+
     def test_reservation_loss_during_playback_remains_reported(self):
         entered = threading.Event()
         release = threading.Event()

@@ -520,11 +520,24 @@ def _take_reservation_release(run):
     return run["run_id"]
 
 
+def _renew_run_reservation(run):
+    # Stop must not release the lease before an in-flight renewal completes.
+    with run["reservation_lock"]:
+        if run["stop_event"].is_set():
+            return None
+        return reserve_robot_for_run(run["run_id"])
+
+
+def _release_run_reservation(run):
+    with run["reservation_lock"]:
+        return release_robot_reservation(run["run_id"])
+
+
 def _renew_robot_reservation(run):
     global _current_run_id
     with app.app_context():
         while not run["stop_event"].wait(20):
-            failure = reserve_robot_for_run(run["run_id"])
+            failure = _renew_run_reservation(run)
             if failure is None:
                 continue
             token_to_release = None
@@ -540,7 +553,7 @@ def _renew_robot_reservation(run):
                     _retain_stopped_run(run)
                     token_to_release = _take_reservation_release(run)
             if token_to_release:
-                released = release_robot_reservation(token_to_release)
+                released = _release_run_reservation(run)
                 if not released:
                     with _run_registry_lock:
                         run["error"] += "; failed to release robot reservation"
@@ -631,7 +644,7 @@ def _perform_state_in_context(run, target, starting):
         else:
             run["worker_done"].set()
     if token_to_release:
-        released = release_robot_reservation(token_to_release)
+        released = _release_run_reservation(run)
     if token_to_release:
         with _run_registry_lock:
             if not released:
@@ -676,7 +689,8 @@ def start_choreography_run(choreography_id):
                    "status": "performing", "stop_event": threading.Event(),
                    "worker_done": threading.Event(), "source_state_id": None,
                    "playback": None, "error": None, "retained": False,
-                   "reservation_released": False}
+                   "reservation_released": False,
+                   "reservation_lock": threading.Lock()}
             _runs[run_id] = run
             _current_run_id = run_id
             _start_performance(run, graph["initial_state"], starting=True)
@@ -759,7 +773,7 @@ def stop_choreography_run(run_id):
             _retain_stopped_run(run)
             token_to_release = _take_reservation_release(run)
     if token_to_release:
-        released = release_robot_reservation(token_to_release)
+        released = _release_run_reservation(run)
         if not released:
             with _run_registry_lock:
                 release_error = "failed to release robot reservation; it will expire automatically"
