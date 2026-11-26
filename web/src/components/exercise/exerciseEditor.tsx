@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DropdownMenu } from "radix-ui";
-import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
 import { FileDropzone } from "@/components/ui/fileDropzone";
 import { SelectedFileCard } from "@/components/ui/selectedFileCard";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
@@ -21,12 +21,12 @@ import { poseLabel, findPoses } from "@/lib/poses";
 import { wordPattern } from "@/lib/text";
 import { pluralSk } from "@/lib/plural";
 import { failureText } from "@/lib/errors";
-import { MicButton } from "@/components/ui/micButton";
-import { AiBadge } from "@/components/ui/aiBadge";
-import { TranscriptBlock } from "@/components/ui/transcriptBlock";
+import { MicButton } from "@/components/voice/micButton";
+import { AiBadge } from "@/components/voice/aiBadge";
+import { TranscriptBlock } from "@/components/voice/transcriptBlock";
 import { ConfirmDialog } from "@/components/ui/confirmDialog";
-import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
-import { API_BASE } from "@/lib/api";
+import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
+import { api, API_BASE } from "@/lib/api";
 import {
   NO_VOICE_TEXT,
   hasVoiceText,
@@ -67,10 +67,41 @@ type Frame = {
   pose_name?: string;
 };
 
+// Frame as returned by server, field names differ between versions
+type RawFrame = {
+  idx?: number;
+  index?: number;
+  frame_index?: number;
+  joint_values?: Record<string, number>;
+  angles?: Record<string, number>;
+  joints?: Record<string, number>;
+  joint_angles?: Record<string, number>;
+  keypoints?: Record<string, unknown> & { pose_name?: string };
+  nao_angles?: number[];
+  pose_name?: string;
+  poseName?: string;
+};
+
 type PoseCommand = {
   name: string;
 };
 
+
+// Joint range of motion over all frames, prompt input for LLM
+function motionSummary(frames: Frame[]) {
+  const ranges: Record<string, { min: number; max: number }> = {};
+  for (const frame of frames) {
+    for (const [joint, value] of Object.entries(frame.angles)) {
+      const range = ranges[joint] ??= { min: value, max: value };
+      range.min = Math.min(range.min, value);
+      range.max = Math.max(range.max, value);
+    }
+  }
+  const joints = Object.entries(ranges)
+    .map(([joint, { min, max }]) => `${joint}: ${(max - min).toFixed(2)} rad`)
+    .join(", ");
+  return `Exercise has ${frames.length} keyframes. Joint range-of-motion: ${joints}.`;
+}
 
 // ── drag-reorder hook ─────────────────────────────────────────────
 function useDragReorder<T>(
@@ -140,8 +171,7 @@ export default function ExerciseEditor() {
 
   // ── load poses on mount ───────────────────────────────────────
   useEffect(() => {
-    fetch(`${API_BASE}/commands`)
-      .then((r) => r.json())
+    api<string[] | { commands?: string[] }>("/commands")
       .then((data) => {
         // Backend may return string[], { commands: string[] }, or a keyed object
         const names: string[] = Array.isArray(data)
@@ -194,12 +224,7 @@ export default function ExerciseEditor() {
       fd.append("max_frames", String(maxFrames));
       appendVideoRange(fd, range);
 
-      const res = await fetch(`${API_BASE}/exercise/from_video`, {
-        method: "POST",
-        body: fd,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await api<{ id?: string; exercise_id?: string; exerciseId?: string }>("/exercise/from_video", { method: "POST", body: fd });
       const id = data.id ?? data.exercise_id ?? data.exerciseId ?? String(data);
       setExerciseId(id);
       showStatus("info", `Cvičenie vytvorené. Načítavam snímky…`);
@@ -217,9 +242,7 @@ export default function ExerciseEditor() {
   const loadFrames = useCallback(async (id: string, quiet = false): Promise<Frame[]> => {
     setLoadingFrames(true);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}/frames`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await api<RawFrame[] | { frames?: RawFrame[] }>(`/exercise/${id}/frames`);
 
       const NAO_JOINT_NAMES = [
         "LShoulderPitch","LShoulderRoll","LElbowRoll","LElbowYaw","LWristYaw",
@@ -229,15 +252,15 @@ export default function ExerciseEditor() {
         "HeadYaw","HeadPitch",
       ];
 
-      const raw: any[] = Array.isArray(data) ? data : data.frames ?? [];
-      const normalised: Frame[] = raw.map((f: any, i: number) => {
+      const raw = Array.isArray(data) ? data : data.frames ?? [];
+      const normalised: Frame[] = raw.map((f, i) => {
         const idx = f.idx ?? f.index ?? f.frame_index ?? i;
         let angles: Record<string, number> =
           f.joint_values ?? f.angles ?? f.joints ?? f.joint_angles ?? {};
         // fallback: build from nao_angles array if angles still empty
         if (Object.keys(angles).length === 0 && Array.isArray(f.nao_angles)) {
           angles = Object.fromEntries(
-            (f.nao_angles as number[]).map((v, j) => [NAO_JOINT_NAMES[j] ?? `j${j}`, v])
+            f.nao_angles.map((v, j) => [NAO_JOINT_NAMES[j] ?? `j${j}`, v])
           );
         }
         return {
@@ -257,8 +280,7 @@ export default function ExerciseEditor() {
       }
       setPoseFrameMap(freshPoseMap);
       // fetch exercise name + existing calorie/description estimates
-      fetch(`${API_BASE}/exercise/${id}`)
-        .then((r) => r.json())
+      api<{ name?: string; calories?: number; description?: string }>(`/exercise/${id}`)
         .then((cfg) => {
           if (cfg.name) setExerciseName(cfg.name);
           if (cfg.calories != null) setCalories(cfg.calories);
@@ -282,49 +304,14 @@ export default function ExerciseEditor() {
     if (!frameList.length || !LLM_AVAILABLE) return;
     setDescLoading(true);
     try {
-      const jointRanges: Record<string, { min: number; max: number }> = {};
-      for (const frame of frameList) {
-        for (const [joint, val] of Object.entries(frame.angles)) {
-          if (!jointRanges[joint]) jointRanges[joint] = { min: val, max: val };
-          else {
-            jointRanges[joint].min = Math.min(jointRanges[joint].min, val);
-            jointRanges[joint].max = Math.max(jointRanges[joint].max, val);
-          }
-        }
-      }
-      const romSummary = Object.entries(jointRanges)
-        .map(([j, { min, max }]) => `${j}: ${(max - min).toFixed(2)} rad`)
-        .join(", ");
-
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, write a short 1–2 sentence description in Slovak of what the exercise looks like and which body parts it involves. Return ONLY a JSON object: {"description": "<text>"}. Be concise and natural.`,
-            },
-            {
-              role: "user",
-              content: `Exercise has ${frameList.length} keyframes. Joint range-of-motion: ${romSummary}.`,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-      const desc = parsed.description?.trim();
+      const { description: text } = await askLlm<{ description: string }>(
+        `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, write a short 1–2 sentence description in Slovak of what the exercise looks like and which body parts it involves. Return ONLY a JSON object: {"description": "<text>"}. Be concise and natural.`,
+        motionSummary(frameList),
+      );
+      const desc = text?.trim();
       if (desc) {
         setDescription(desc);
-        await fetch(`${API_BASE}/exercise/${id}/config`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: desc }),
-        });
+        await api(`/exercise/${id}/config`, { method: "PUT", json: { description: desc } });
       }
     } catch {
       // best-effort
@@ -341,12 +328,7 @@ export default function ExerciseEditor() {
     setInsertingAt(position);
     const oldIdxs = new Set(frames.map((f) => f.idx));
     try {
-      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/from_pose`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pose_name: poseName, position }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${exerciseId}/frame/from_pose`, { method: "POST", json: { pose_name: poseName, position } });
       const newFrames = await loadFrames(exerciseId, true);
       const newFrame = newFrames.find((f) => !oldIdxs.has(f.idx));
       if (newFrame) {
@@ -367,10 +349,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setDeletingAt(frameIdx);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/frame/${frameIdx}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${exerciseId}/frame/${frameIdx}`, { method: "DELETE" });
       const remaining = frames.filter((f) => f.idx !== frameIdx);
       setFrames(remaining);
       generateDescription(exerciseId, remaining);
@@ -389,12 +368,7 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     try {
       const frame_sequence = (framesToSave ?? frames).map((f) => f.idx);
-      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/sequence`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame_sequence }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${exerciseId}/sequence`, { method: "PUT", json: { frame_sequence } });
       showStatus("success", "Poradie uložené.");
     } catch (err) {
       showStatus("error", failureText("Uloženie zlyhalo", err));
@@ -405,12 +379,7 @@ export default function ExerciseEditor() {
   const renameExercise = useCallback(async (name: string) => {
     if (!exerciseId || !name.trim()) return false;
     try {
-      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${exerciseId}/config`, { method: "PUT", json: { name: name.trim() } });
       setExerciseName(name.trim());
       return true;
     } catch {
@@ -424,51 +393,15 @@ export default function ExerciseEditor() {
     if (!frameList.length || !LLM_AVAILABLE) return;
     setCaloriesLoading(true);
     try {
-      // summarise range-of-motion per joint across all frames
-      const jointRanges: Record<string, { min: number; max: number }> = {};
-      for (const frame of frameList) {
-        for (const [joint, val] of Object.entries(frame.angles)) {
-          if (!jointRanges[joint]) jointRanges[joint] = { min: val, max: val };
-          else {
-            jointRanges[joint].min = Math.min(jointRanges[joint].min, val);
-            jointRanges[joint].max = Math.max(jointRanges[joint].max, val);
-          }
-        }
-      }
-      const romSummary = Object.entries(jointRanges)
-        .map(([j, { min, max }]) => `${j}: ${(max - min).toFixed(2)} rad`)
-        .join(", ");
-
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, estimate the calories a person would burn performing this exercise once. Return ONLY a JSON object: {"calories": <number>}. Round to one decimal place.`,
-            },
-            {
-              role: "user",
-              content: `Exercise has ${frameList.length} keyframes. Joint range-of-motion: ${romSummary}.`,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-      const kcal = Number(parsed.calories);
+      const { calories: estimate } = await askLlm<{ calories: number }>(
+        `You are a fitness expert. Given NAO humanoid robot joint angle data for a physical exercise, estimate the calories a person would burn performing this exercise once. Return ONLY a JSON object: {"calories": <number>}. Round to one decimal place.`,
+        motionSummary(frameList),
+      );
+      const kcal = Number(estimate);
       if (!isNaN(kcal) && kcal > 0) {
         setCalories(kcal);
         // persist to backend
-        await fetch(`${API_BASE}/exercise/${id}/config`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ calories: kcal }),
-        });
+        await api(`/exercise/${id}/config`, { method: "PUT", json: { calories: kcal } });
       }
     } catch {
       // estimation is best-effort, don't show error
@@ -484,11 +417,8 @@ export default function ExerciseEditor() {
     if (!exerciseId) return;
     setRunning(true);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${exerciseId}/run`, {
-        method: "POST",
-        // No body — repetitions defaults to the value stored in the exercise config.
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // no body, repetitions from exercise config
+      await api(`/exercise/${exerciseId}/run`, { method: "POST" });
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch (err) {
       showStatus("error", failureText("Spustenie zlyhalo", err));
@@ -793,20 +723,19 @@ function FrameCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const savedVoiceText = useRef("");
   const recorder = useRef<MediaRecorder | null>(null);
-  const voiceConfigUrl = `${API_BASE}/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
+  const voiceConfigPath = `/voiceLines/config/exercise/${exerciseId}/frame/${frame.idx}`;
 
   useEffect(() => {
-    fetch(voiceConfigUrl)
-      .then((res) => (res.ok ? res.json() : {}))
-      .then((config: VoiceLinesConfig) => {
+    api<VoiceLinesConfig>(voiceConfigPath)
+      .catch((): VoiceLinesConfig => ({}))
+      .then((config) => {
         const text = voiceTextFromConfig(config);
         savedVoiceText.current = text;
         setVoiceText(text);
         if (config.lang) setSpeechLanguage(config.lang);
         if (config.speed !== undefined) setSpeechSpeed(Number(config.speed));
       })
-      .catch(() => {/* no voice lines yet */});
-  }, [voiceConfigUrl]);
+  }, [voiceConfigPath]);
 
   // release microphone when card unmounts mid-recording
   useEffect(() => () => recorder.current?.stream.getTracks().forEach((track) => track.stop()), []);
@@ -815,12 +744,7 @@ function FrameCard({
   const saveVoice = async (text: string, lang = speechLanguage, speed = speechSpeed) => {
     const config: VoiceLinesConfig = { extractedText: hasVoiceText(text) ? text : NO_VOICE_TEXT, lang, speed };
     try {
-      const res = await fetch(voiceConfigUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice_lines: config }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(voiceConfigPath, { method: "POST", json: { voice_lines: config } });
       savedVoiceText.current = text;
       setVoiceSaved(true);
       setTimeout(() => setVoiceSaved(false), 2000);
@@ -860,13 +784,10 @@ function FrameCard({
       setDictation("transcribing");
       try {
         const audio = await blobToBase64(new Blob(chunks, { type: "audio/webm" }));
-        const res = await fetch(`${API_BASE}/translate/webm`, {
+        const { translation } = await api<{ translation?: string }>("/translate/webm", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio_file: audio, model: "large-v1" }),
+          json: { audio_file: audio, model: "large-v1" },
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const { translation } = await res.json();
         if (translation) {
           const text = voiceText.trim() ? `${voiceText.trim()} ${translation}` : translation;
           setVoiceText(text);
@@ -894,12 +815,10 @@ function FrameCard({
     const voice_lines_configs = { entire: { translation: voiceText } };
     setNaoSaying(true);
     try {
-      const res = await fetch(`${API_BASE}/voiceLines/applyVoiceLine`, {
+      await api("/voiceLines/applyVoiceLine", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice_lines: { voice_lines_configs, lang: speechLanguage, speed: speechSpeed } }),
+        json: { voice_lines: { voice_lines_configs, lang: speechLanguage, speed: speechSpeed } },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (err) {
       showStatus("error", failureText("Robot nemohol hovoriť", err));
     } finally {
@@ -1172,16 +1091,8 @@ function VoiceEditPanel({ poses, frameCount, onInsert, onClose }: VoiceEditPanel
 
     const poseList = poses.map((p) => p.name).join(", ");
     try {
-      const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `You are a voice command parser for an exercise frame editor. The user speaks Slovak (or mixed Slovak/English). They have ${frameCount} frames numbered 1 to ${frameCount}.
+      const cmd = await askLlm<{ pose: string | null; frame: number | null; side: "before" | "after" | null }>(
+        `You are a voice command parser for an exercise frame editor. The user speaks Slovak (or mixed Slovak/English). They have ${frameCount} frames numbered 1 to ${frameCount}.
 
 Valid pose keys: [${poseList}].
 Slovak→key hints: drep→crouch, úklon→bow, zamávaj/zamávajte→wave, stoj→stand, sed/sadni→sit, ruky hore→hands_up, t póza/t-póza/tpóza/tipos/depóza/te póza/tpose→t_pose, ukáž vpravo→point_right, ukáž vľavo→point_left.
@@ -1193,14 +1104,8 @@ Return ONLY a JSON object with these fields:
 - "side": "before" or "after", or null if not mentioned
 
 No other text, only JSON.`,
-            },
-            { role: "user", content: transcript },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const cmd = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+        transcript,
+      );
       if (!cmd.frame || !cmd.side) throw new Error("no frame/side");
       const poseKey = cmd.pose && poses.some((p) => p.name === cmd.pose) ? cmd.pose : null;
       applyParsed({ pose: poseKey, frame: Number(cmd.frame), side: cmd.side === "before" ? "before" : "after" });

@@ -10,7 +10,7 @@ import { StatusAlert } from "@/components/ui/statusAlert";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
-import { API_BASE } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { failureText } from "@/lib/errors";
 import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen, Upload } from "lucide-react";
 
@@ -30,7 +30,7 @@ type Exercise = {
   description?: string | null;
 };
 
-export default function ExercisesStore() {
+export default function ExercisesPage() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading]     = useState(true);
   const { status, show: showStatus } = useStatus();
@@ -42,9 +42,7 @@ export default function ExercisesStore() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/exercise/list`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setExercises(await res.json());
+      setExercises(await api<Exercise[]>("/exercise/list"));
     } catch (err) {
       showStatus("error", failureText("Načítanie cvičení zlyhalo", err));
     } finally {
@@ -57,25 +55,20 @@ export default function ExercisesStore() {
   const handleDelete = async (id: string) => {
     setDeleting(id);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        if (res.status === 409) {
-          // The backend's "error" field is an English technical message; build
-          // a Slovak message from the structured "choreographies" list instead.
-          const body = await res.json().catch(() => null) as { choreographies?: { id: string; name: string }[] } | null;
-          const names = (body?.choreographies ?? []).map((c) => c.name).filter(Boolean);
-          throw new Error(
-            names.length > 0
-              ? `Cvičenie sa používa v choreografii: ${names.join(", ")}.`
-              : "Cvičenie sa používa v choreografii a nedá sa odstrániť.",
-          );
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
+      await api(`/exercise/${id}`, { method: "DELETE" });
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
     } catch (err) {
-      showStatus("error", failureText("Odstránenie zlyhalo", err));
+      // 409: used in choreography, Slovak message from names instead of English server error
+      if (err instanceof ApiError && err.status === 409) {
+        const body = err.body as { choreographies?: { name: string }[] } | undefined;
+        const names = (body?.choreographies ?? []).map((c) => c.name).filter(Boolean);
+        showStatus("error", names.length > 0
+          ? `Cvičenie sa používa v choreografii: ${names.join(", ")}.`
+          : "Cvičenie sa používa v choreografii a nedá sa odstrániť.");
+      } else {
+        showStatus("error", failureText("Odstránenie zlyhalo", err));
+      }
     } finally {
       setDeleting(null);
     }
@@ -84,8 +77,7 @@ export default function ExercisesStore() {
   const handleRun = async (id: string) => {
     setRunning(id);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}/run`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${id}/run`, { method: "POST" });
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch (err) {
       showStatus("error", failureText("Spustenie zlyhalo", err));
@@ -96,12 +88,7 @@ export default function ExercisesStore() {
 
   const renameExercise = async (id: string, name: string) => {
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}/config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api(`/exercise/${id}/config`, { method: "PUT", json: { name } });
       setExercises((prev) => prev.map((e) => e.id === id ? { ...e, name } : e));
       return true;
     } catch (err) {
