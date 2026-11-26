@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FileDropzone } from "@/components/ui/fileDropzone";
 import { SelectedFileCard } from "@/components/ui/selectedFileCard";
 import { StatusAlert } from "@/components/ui/statusAlert";
-import { PageHeader } from "@/components/layout/pageHeader";
+import { Page } from "@/components/layout/page";
 import { useStatus } from "@/hooks/useStatus";
 import { failureText } from "@/lib/errors";
 import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
@@ -65,8 +65,7 @@ export default function UploadPage() {
   const isVideo = file?.type.startsWith("video/");
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-4">
-      <PageHeader title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie." />
+    <Page title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie.">
       <StatusAlert status={status} />
 
       {!file || !previewUrl ? (
@@ -91,6 +90,6 @@ export default function UploadPage() {
             : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain rounded-lg bg-muted" />}
         </SelectedFileCard>
       )}
-    </div>
+    </Page>
   );
 }
