@@ -2,16 +2,16 @@ import { useState } from "react";
 import { FileDropzone } from "@/components/ui/fileDropzone";
 import { SelectedFileCard } from "@/components/ui/selectedFileCard";
 import { StatusAlert } from "@/components/ui/statusAlert";
-import { PageHeader } from "@/components/layout/pageHeader";
+import { Page } from "@/components/layout/page";
 import { useStatus } from "@/hooks/useStatus";
 import { failureText } from "@/lib/errors";
-import { VideoTrimmer } from "@/components/ui/videoTrimmer";
+import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
 import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
 import { useSelectedFile } from "@/hooks/useSelectedFile";
-import { API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 
 
-export default function SimpleUploadPage() {
+export default function UploadPage() {
   const { file, url: previewUrl, select, clear } = useSelectedFile();
   const [isUploading, setIsUploading] = useState(false);
   const [videoRange, setVideoRange] = useState<VideoRange | null>(null);
@@ -49,18 +49,7 @@ export default function SimpleUploadPage() {
         formData.append("name", exerciseName);
       }
 
-      const url = isVideo ? `${API_BASE}/exercise/from_video` : `${API_BASE}/exercise/from_image`;
-      const response = await fetch(url, {
-        method: "POST",
-        body: formData,
-      });
-
-      const responseData = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const details = [responseData?.detail, responseData?.error, responseData?.message].filter(Boolean);
-        throw new Error(`HTTP ${response.status}${details.length ? `, ${details.join(", ")}` : ""}`);
-      }
+      await api(isVideo ? "/exercise/from_video" : "/exercise/from_image", { method: "POST", body: formData });
 
       // reset selection so the same file is not uploaded twice
       clear();
@@ -76,8 +65,7 @@ export default function SimpleUploadPage() {
   const isVideo = file?.type.startsWith("video/");
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-4">
-      <PageHeader title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie." />
+    <Page title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie.">
       <StatusAlert status={status} />
 
       {!file || !previewUrl ? (
@@ -102,6 +90,6 @@ export default function SimpleUploadPage() {
             : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain rounded-lg bg-muted" />}
         </SelectedFileCard>
       )}
-    </div>
+    </Page>
   );
 }

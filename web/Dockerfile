@@ -3,9 +3,9 @@ FROM node:20 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install --include=dev --force
+RUN npm ci
 COPY . .
-RUN node node_modules/vite/bin/vite.js build 
+RUN npm run build
 
 
 # --- Production stage ---
