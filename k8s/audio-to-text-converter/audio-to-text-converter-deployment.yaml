@@ -34,6 +34,12 @@ spec:
               value: "production"
             - name: COMPOSE_NETWORK
               value: "true"
+          # Downloaded models (Hugging Face, torch) are cached here. An
+          # emptyDir survives container restarts inside the pod, so the
+          # ~3 GB model is not downloaded again after an OOM restart.
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache
           readinessProbe:
             httpGet:
               path: /test
@@ -46,6 +52,10 @@ spec:
               port: 9901
             initialDelaySeconds: 60
             periodSeconds: 30
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 8Gi
 ---
 apiVersion: v1
 kind: Service
