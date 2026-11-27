@@ -1,6 +1,6 @@
-import { Home, Upload, FilmIcon, Mic, Library, type LucideIcon } from "lucide-react";
+import { Home, Upload, FilmIcon, Mic, Library, Workflow, type LucideIcon } from "lucide-react";
 
-export type NavItem = { path: string; icon: LucideIcon; label: string; description?: string };
+type NavItem = { path: string; icon: LucideIcon; label: string; description?: string };
 
 // Single source for side menu, bottom menu and home page cards
 export const NAV_ITEMS: NavItem[] = [
@@ -28,5 +28,11 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Library,
     label: "Cvičenia",
     description: "Prehliadajte, premenúvajte, mažte a spúšťajte uložené cvičenia.",
+  },
+  {
+    path: "/choreographies",
+    icon: Workflow,
+    label: "Choreografie",
+    description: "Spojte cvičenia do grafu stavov s prechodmi medzi nimi.",
   },
 ];

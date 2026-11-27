@@ -14,38 +14,23 @@ import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
 import { api, ApiError } from "@/lib/api";
 import { failureText } from "@/lib/errors";
-import { runExercise, updateExercise } from "@/lib/exercises";
+import { formatDateTime } from "@/lib/date";
+import { listExercises, runExercise, updateExercise, type ExerciseSummary } from "@/lib/exercises";
 import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen, Upload } from "lucide-react";
 
-// created_at is UTC without timezone suffix
-const formatCreatedAt = (value: string) =>
-  new Date(/Z|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`).toLocaleString("sk-SK", {
-    day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
-
-type Exercise = {
-  id: string;
-  name: string;
-  frame_count: number;
-  created_at: string;
-  repetitions: number;
-  calories?: number | null;
-  description?: string | null;
-};
-
 export default function ExercisesPage() {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseSummary[]>([]);
   const [loading, setLoading]     = useState(true);
   const { status, show: showStatus } = useStatus();
   const [running, setRunning]     = useState<string | null>(null);
   const [deleting, setDeleting]   = useState<string | null>(null);
-  const [toDelete, setToDelete]   = useState<Exercise | null>(null);
+  const [toDelete, setToDelete]   = useState<ExerciseSummary | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setExercises(await api<Exercise[]>("/exercise/list"));
+      setExercises(await listExercises());
     } catch (err) {
       showStatus("error", failureText("Načítanie cvičení zlyhalo", err));
     } finally {
@@ -130,7 +115,7 @@ export default function ExercisesPage() {
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                {formatCreatedAt(ex.created_at)}
+                {formatDateTime(ex.created_at)}
               </span>
               {ex.calories != null && (
                 <span className="inline-flex items-center gap-1.5">

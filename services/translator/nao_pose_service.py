@@ -91,10 +91,11 @@ def call_pose_service(container_path: str):
 
 
 def call_exercise_create(name, frames, pose_engine="mediapipe", media_bytes=None, media_ext=".mp4",
-                         video_range=None):
+                         video_range=None, source=None):
     """
     POST to exerciseconfigservice /exercise/create.
-    Sends frames and optional video range as JSON form fields, optionally attaches media file.
+    Sends frames and optional video range as JSON form fields, source ("video" or "image") as form field,
+    optionally attaches media file.
     Returns the created exercise config dict.
     """
     data = {
@@ -104,6 +105,8 @@ def call_exercise_create(name, frames, pose_engine="mediapipe", media_bytes=None
     }
     if video_range is not None:
         data["video_range"] = (None, json.dumps(video_range), "application/json")
+    if source is not None:
+        data["source"] = (None, source)
     if media_bytes is not None:
         ext = media_ext if media_ext.startswith(".") else f".{media_ext}"
         data["media"] = (f"original{ext}", media_bytes, "application/octet-stream")
@@ -362,6 +365,7 @@ def exercise_from_image():
             pose_engine="mediapipe",
             media_bytes=image_bytes,
             media_ext=ext,
+            source="image",
         )
     except requests.RequestException as e:
         return jsonify({"error": "failed to save exercise", "detail": str(e)}), 502
@@ -678,6 +682,7 @@ def exercise_from_video():
                 media_ext=ext,
                 # range selected in saved original video, seconds and max_frames may cut processing shorter
                 video_range={"start": start_seconds, "end": None if end_seconds == -1 else end_seconds},
+                source="video",
             )
         except requests.RequestException as e:
             return jsonify({"error": "failed to save exercise", "detail": str(e)}), 502

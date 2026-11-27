@@ -11,12 +11,13 @@ import { FrameList } from "@/components/editor/frameList";
 import { UploadPanel } from "@/components/editor/uploadPanel";
 import { VoiceEditPanel } from "@/components/editor/voiceEditPanel";
 import { useExerciseEditor, type UploadSettings } from "@/hooks/useExerciseEditor";
+import { DEFAULT_VIDEO_SETTINGS } from "@/lib/exercises";
 
 // Video to frames, frame editing and run on robot, ?id= opens saved exercise
 export default function ExerciseEditor() {
   const [searchParams] = useSearchParams();
   const editor = useExerciseEditor(searchParams.get("id"));
-  const [settings, setSettings] = useState<UploadSettings>({ fps: 1, maxFrames: 8 });
+  const [settings, setSettings] = useState<UploadSettings>(DEFAULT_VIDEO_SETTINGS);
   const [voiceEditOpen, setVoiceEditOpen] = useState(false);
   const { exerciseId, frames, loadingFrames } = editor;
 

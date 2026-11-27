@@ -1,12 +1,9 @@
-import type { ComponentType } from "react";
 import { DropdownMenu } from "radix-ui";
-import { Check, ChevronLeft, ChevronRight, Gauge, Languages, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Gauge, Languages, Loader2, MoreHorizontal, Trash2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MENU_CONTENT, MENU_ITEM } from "@/components/ui/menu";
 import { poseLabel, type PoseCommand } from "@/lib/poses";
 import { SPEECH_LANGUAGES, SPEECH_SPEEDS } from "@/lib/voiceLines";
-
-const MENU_CONTENT = "z-50 min-w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md";
-const MENU_ITEM = "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none cursor-default select-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 data-[disabled]:pointer-events-none";
 
 type Props = {
   poses: PoseCommand[];
@@ -77,7 +74,7 @@ export function FrameMenu({ poses, busy, language, speed, onInsertBefore, onInse
 }
 
 type RadioSubmenuProps = {
-  icon: ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   options: [string, string][];

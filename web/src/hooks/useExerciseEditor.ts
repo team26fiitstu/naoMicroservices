@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
 import { failureText } from "@/lib/errors";
-import { runExercise, updateExercise } from "@/lib/exercises";
+import { createExerciseFromVideo, runExercise, updateExercise } from "@/lib/exercises";
 import { pluralSk } from "@/lib/plural";
 import { poseLabel, type PoseCommand } from "@/lib/poses";
-import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
+import type { VideoRange } from "@/lib/videoRange";
 import { motionSummary, normalizeFrame, type Frame, type RawFrame } from "@/lib/frames";
 import { useStatus } from "@/hooks/useStatus";
 
@@ -122,18 +122,14 @@ export function useExerciseEditor(initialId: string | null) {
     setFrames([]);
     setExerciseId(null);
     try {
-      const fd = new FormData();
-      fd.append("video", file);
-      fd.append("fps", String(fps));
-      fd.append("max_frames", String(maxFrames));
-      appendVideoRange(fd, range);
-      const data = await api<{ id?: string; exercise_id?: string; exerciseId?: string }>("/exercise/from_video", { method: "POST", body: fd });
-      const id = data.id ?? data.exercise_id ?? data.exerciseId ?? String(data);
+      const { id } = await createExerciseFromVideo(file, range, { fps, max_frames: maxFrames });
       setExerciseId(id);
       showStatus("info", "Cvičenie vytvorené. Načítavam snímky…");
       await loadFrames(id);
+      return true;
     } catch (err) {
       showStatus("error", failureText("Nahranie zlyhalo", err));
+      return false;
     } finally {
       setUploading(false);
     }
