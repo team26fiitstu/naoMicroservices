@@ -50,7 +50,7 @@ export function MediaUpload({ accept, formats, submitLabel, submitting, onSubmit
     >
       {isVideo
         ? <VideoTrimmer key={url} src={url} onChange={setRange} />
-        : <img src={url} alt="Náhľad" className="w-full max-h-80 object-contain rounded-lg bg-muted" />}
+        : <img src={url} alt="Náhľad" className="w-full max-h-80 object-contain rounded-base bg-muted" />}
     </SelectedFileCard>
   );
 }

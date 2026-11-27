@@ -30,14 +30,14 @@ export function AnglesTooltip({ angles }: { angles: Record<string, number> }) {
       )}
       {open && count > 0 && (
         <div
-          className="absolute bottom-full left-3 mb-1 w-56 z-50 rounded-lg border bg-popover text-popover-foreground shadow-lg p-2"
+          className="absolute bottom-full left-3 mb-1 w-56 z-50 rounded-base border bg-popover text-popover-foreground shadow-lg p-2"
           onMouseEnter={show}
           onMouseLeave={hide}
         >
           <p className="px-1 pb-1.5 mb-1 border-b text-[11px] font-medium">Uhly kĺbov (rad)</p>
           <div className="max-h-52 overflow-y-auto">
             {Object.entries(angles).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-3 rounded px-1 py-0.5 text-[11px] hover:bg-muted">
+              <div key={k} className="flex justify-between gap-3 rounded-base px-1 py-0.5 text-[11px] hover:bg-muted">
                 <span className="text-muted-foreground">{k}</span>
                 <span className="font-mono tabular-nums">{typeof v === "number" ? v.toFixed(3) : v}</span>
               </div>

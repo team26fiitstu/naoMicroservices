@@ -13,7 +13,7 @@ export function FrameImage({ frame, exerciseId, className }: { frame: Frame; exe
 
   if (failed >= sources.length) {
     return (
-      <div className={`${className} rounded-lg bg-muted flex items-center justify-center`}>
+      <div className={`${className} rounded-base bg-muted flex items-center justify-center`}>
         <Film className="h-5 w-5 text-muted-foreground opacity-40" />
       </div>
     );
@@ -22,7 +22,7 @@ export function FrameImage({ frame, exerciseId, className }: { frame: Frame; exe
     <img
       src={sources[failed]}
       alt={frame.pose_name ?? `Snímka ${frame.idx}`}
-      className={`${className} rounded-lg bg-muted`}
+      className={`${className} rounded-base bg-muted`}
       onError={() => setFailed((n) => n + 1)}
     />
   );

@@ -20,10 +20,10 @@ export default function MainPage() {
           <button
             key={path}
             onClick={() => navigate(path)}
-            className="text-left rounded-xl border border-border bg-card p-4 hover:bg-muted/50 transition-colors space-y-2"
+            className="text-left rounded-base border border-border bg-card p-4 hover:bg-muted/50 transition-colors space-y-2"
           >
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-base bg-primary/10 flex items-center justify-center">
                 <Icon className="h-4 w-4 text-primary" />
               </div>
               <span className="text-sm font-medium text-foreground">{label}</span>
