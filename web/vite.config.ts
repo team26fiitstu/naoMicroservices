@@ -17,7 +17,7 @@ export default defineConfig({
       "/exercise/from_video": { target: "http://localhost:7000", changeOrigin: true },
       "/exercise/from_image": { target: "http://localhost:7000", changeOrigin: true },
       "^/exercise/[^/]+/run$": { target: "http://localhost:7000", changeOrigin: true },
-      "^/choreography/[^/]+/run$": { target: "http://localhost:7000", changeOrigin: true },
+      "^/choreography/[^/?]+/run(?:\\?.*)?$": { target: "http://localhost:7000", changeOrigin: true },
       "^/run(?:/|$)": { target: "http://localhost:7000", changeOrigin: true },
       // robot: must be above "/voiceLines"
       "/voiceLines/applyVoiceLine": { target: "http://localhost:5000", changeOrigin: true },

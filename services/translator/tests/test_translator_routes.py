@@ -284,7 +284,7 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual([call.args[0] for call in move.call_args_list], [[0.1] * 22, [0.2] * 22, [0.1] * 22])
         speak.assert_called_once_with({"lang": "English"})
-        self.assertEqual(result.json["results"][0]["type"], "pose")
+        self.assertEqual(result.json["results"][0]["type"], "voice")
 
     def test_crud_proxies(self):
         cases = (

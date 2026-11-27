@@ -139,6 +139,8 @@ def execute_command():
             timeout=15,
             idempotent=False,  # a retry could move the robot twice
         )
+        if resp.status_code == 409:
+            return jsonify({"error": "robot is reserved by a choreography run", "command": pose_name}), 409
         resp.raise_for_status()
         nao_response = resp.json()
     except requests.RequestException as exc:

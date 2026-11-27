@@ -1,4 +1,5 @@
 """Static checks for dev and container choreography proxy ownership."""
+import json
 import re
 import unittest
 
@@ -8,10 +9,13 @@ from tests._support import ROOT
 class ChoreographyProxy(unittest.TestCase):
     def test_vite_routes(self):
         config = (ROOT / "web/vite.config.ts").read_text()
-        run_pattern = re.search(r'"(\^/choreography/[^\"]+)": \{ target: "http://localhost:7000"', config).group(1)
-        for path in ("/choreography/aaaaaaaa/run",):
+        route = re.search(r'("\^/choreography/[^\"]+"): \{ target: "http://localhost:7000"', config)
+        self.assertIsNotNone(route)
+        run_pattern = json.loads(route.group(1))
+        for path in ("/choreography/aaaaaaaa/run", "/choreography/aaaaaaaa/run?source=editor"):
             self.assertIsNotNone(re.fullmatch(run_pattern, path))
-        for path in ("/choreography/list", "/choreography/create", "/choreography/aaaaaaaa"):
+        for path in ("/choreography/list", "/choreography/create", "/choreography/aaaaaaaa",
+                     "/choreography/aaaaaaaa?source=editor", "/choreography/aaaaaaaa/run/extra"):
             self.assertIsNone(re.fullmatch(run_pattern, path))
         self.assertIn('"/choreography": { target: "http://localhost:7001"', config)
         self.assertIn('"^/run(?:/|$)": { target: "http://localhost:7000"', config)

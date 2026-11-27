@@ -60,6 +60,13 @@ class VoiceRoutes(OfflineCase):
             self.assertIn("error", malformed.json)
         upstream.assert_not_called()
 
+    def test_command_preserves_robot_reservation_conflict(self):
+        with patch.object(voice.requests, "post", return_value=response({}, 409)) as upstream:
+            result = self.client.post("/command", json={"command": "wave"})
+        self.assertEqual(result.status_code, 409)
+        self.assertIn("reserved", result.json["error"])
+        upstream.assert_called_once()
+
     def test_nao_api_failure_returns_502(self):
         # setPose is not idempotent: a refused connection (request never sent)
         # is retried, but an HTTP 5xx / timeout / aborted connection must not

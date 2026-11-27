@@ -33,6 +33,8 @@ the reservation while its run is active and releases it after stopping. If
 translator disappears, the reservation expires after 120 seconds. This token
 coordinates commands; it is not an authentication credential. Run one robot
 API process per robot, since locks and reservations are kept in process memory.
+If translator cannot confirm a release, it rejects new playback with `409`
+until the possible reservation has expired (up to 120 seconds).
 Release also retires the token, so a delayed renewal cannot reserve the robot
 again. The service remembers the most recent 1000 retired tokens in memory;
 `DELETE` is safe to repeat even if the lease has expired.
