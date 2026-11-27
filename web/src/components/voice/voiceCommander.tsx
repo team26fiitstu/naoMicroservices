@@ -3,38 +3,22 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
-import { MicButton } from "@/components/ui/micButton";
+import { MicButton } from "@/components/voice/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
-import { API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
-import { TranscriptBlock } from "@/components/ui/transcriptBlock";
-import { LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_AVAILABLE } from "@/lib/llm";
+import { TranscriptBlock } from "@/components/voice/transcriptBlock";
+import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
 
 const ALL_COMMANDS = Object.keys(POSE_LABELS);
 
-
-
 async function interpretWithGPT(transcript: string): Promise<string[]> {
-  const res = await fetch(`${LLM_API_BASE}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LLM_API_KEY}` },
-    body: JSON.stringify({
-      model: LLM_MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `You are a voice command parser for a NAO robot. The user speaks pose names (possibly in Slovak or with speech recognition errors). Map what they said to one or more of these exact command keys: ${ALL_COMMANDS.join(", ")}. Return ONLY a JSON object: {"commands": ["key1", "key2", ...]}. If nothing matches, return {"commands": []}. Preserve the order the user mentioned them.`,
-        },
-        { role: "user", content: transcript },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-  return Array.isArray(parsed.commands) ? parsed.commands.filter((c: string) => ALL_COMMANDS.includes(c)) : [];
+  const { commands } = await askLlm<{ commands: string[] }>(
+    `You are a voice command parser for a NAO robot. The user speaks pose names (possibly in Slovak or with speech recognition errors). Map what they said to one or more of these exact command keys: ${ALL_COMMANDS.join(", ")}. Return ONLY a JSON object: {"commands": ["key1", "key2", ...]}. If nothing matches, return {"commands": []}. Preserve the order the user mentioned them.`,
+    transcript,
+  );
+  return Array.isArray(commands) ? commands.filter((c) => ALL_COMMANDS.includes(c)) : [];
 }
 
 type QueueItem = {
@@ -97,16 +81,7 @@ export function VoiceCommander() {
       );
 
       try {
-        const res = await fetch(`${API_BASE}/command`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command: items[i].command }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || data.message || `HTTP ${res.status}`);
-        }
+        await api("/command", { method: "POST", json: { command: items[i].command } });
 
         setQueue((prev) =>
           prev.map((item, idx) => (idx === i ? { ...item, status: "done" } : item))

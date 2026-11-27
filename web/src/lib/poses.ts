@@ -1,5 +1,8 @@
 import { wordPattern } from "@/lib/text";
 
+// Pose command from robot API
+export type PoseCommand = { name: string };
+
 // Slovak labels of robot pose commands
 export const POSE_LABELS: Record<string, string> = {
   wave:        "Zamávaj",

@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
 import { ConfirmDialog } from "@/components/ui/confirmDialog";
+import { EmptyState } from "@/components/ui/emptyState";
+import { LoadingState } from "@/components/ui/loadingState";
 import { exerciseDisplayName } from "@/lib/exerciseName";
 import { StatusAlert } from "@/components/ui/statusAlert";
-import { PageHeader } from "@/components/layout/pageHeader";
+import { Page } from "@/components/layout/page";
 import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
-import { API_BASE } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { failureText } from "@/lib/errors";
+import { runExercise, updateExercise } from "@/lib/exercises";
 import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen, Upload } from "lucide-react";
 
 // created_at is UTC without timezone suffix
@@ -30,7 +33,7 @@ type Exercise = {
   description?: string | null;
 };
 
-export default function ExercisesStore() {
+export default function ExercisesPage() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading]     = useState(true);
   const { status, show: showStatus } = useStatus();
@@ -42,9 +45,7 @@ export default function ExercisesStore() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/exercise/list`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setExercises(await res.json());
+      setExercises(await api<Exercise[]>("/exercise/list"));
     } catch (err) {
       showStatus("error", failureText("Načítanie cvičení zlyhalo", err));
     } finally {
@@ -57,25 +58,20 @@ export default function ExercisesStore() {
   const handleDelete = async (id: string) => {
     setDeleting(id);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        if (res.status === 409) {
-          // The backend's "error" field is an English technical message; build
-          // a Slovak message from the structured "choreographies" list instead.
-          const body = await res.json().catch(() => null) as { choreographies?: { id: string; name: string }[] } | null;
-          const names = (body?.choreographies ?? []).map((c) => c.name).filter(Boolean);
-          throw new Error(
-            names.length > 0
-              ? `Cvičenie sa používa v choreografii: ${names.join(", ")}.`
-              : "Cvičenie sa používa v choreografii a nedá sa odstrániť.",
-          );
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
+      await api(`/exercise/${id}`, { method: "DELETE" });
       setExercises((prev) => prev.filter((e) => e.id !== id));
       showStatus("success", "Cvičenie odstránené.");
     } catch (err) {
-      showStatus("error", failureText("Odstránenie zlyhalo", err));
+      // 409: used in choreography, Slovak message from names instead of English server error
+      if (err instanceof ApiError && err.status === 409) {
+        const body = err.body as { choreographies?: { name: string }[] } | undefined;
+        const names = (body?.choreographies ?? []).map((c) => c.name).filter(Boolean);
+        showStatus("error", names.length > 0
+          ? `Cvičenie sa používa v choreografii: ${names.join(", ")}.`
+          : "Cvičenie sa používa v choreografii a nedá sa odstrániť.");
+      } else {
+        showStatus("error", failureText("Odstránenie zlyhalo", err));
+      }
     } finally {
       setDeleting(null);
     }
@@ -84,8 +80,7 @@ export default function ExercisesStore() {
   const handleRun = async (id: string) => {
     setRunning(id);
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}/run`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await runExercise(id);
       showStatus("success", "Cvičenie odoslané robotovi!");
     } catch (err) {
       showStatus("error", failureText("Spustenie zlyhalo", err));
@@ -96,12 +91,7 @@ export default function ExercisesStore() {
 
   const renameExercise = async (id: string, name: string) => {
     try {
-      const res = await fetch(`${API_BASE}/exercise/${id}/config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await updateExercise(id, { name });
       setExercises((prev) => prev.map((e) => e.id === id ? { ...e, name } : e));
       return true;
     } catch (err) {
@@ -111,25 +101,21 @@ export default function ExercisesStore() {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6 pb-24 space-y-4">
-      <PageHeader title="Cvičenia" description="Všetky uložené cvičenia" />
+    <Page title="Cvičenia" description="Všetky uložené cvičenia">
       <StatusAlert status={status} />
 
-      {loading && (
-        <div className="flex justify-center py-16">
-          <Loader2 className="h-7 w-7 text-primary animate-spin" />
-        </div>
-      )}
+      {loading && <LoadingState text="Načítavam cvičenia…" />}
 
       {!loading && exercises.length === 0 && (
-        <Card className="flex flex-col items-center justify-center py-16 gap-3">
-          <Film className="h-8 w-8 text-muted-foreground opacity-40" />
-          <p className="text-sm text-muted-foreground">Zatiaľ žiadne cvičenia.</p>
-          <Button size="sm" variant="outline" onClick={() => navigate("/upload")}>
-            <Upload className="h-3.5 w-3.5" />
-            Nahrať video
-          </Button>
-        </Card>
+        <EmptyState
+          text="Zatiaľ žiadne cvičenia."
+          action={
+            <Button size="sm" variant="outline" onClick={() => navigate("/upload")}>
+              <Upload className="h-3.5 w-3.5" />
+              Nahrať video
+            </Button>
+          }
+        />
       )}
 
       {!loading && exercises.map((ex) => (
@@ -196,6 +182,6 @@ export default function ExercisesStore() {
         confirmLabel="Odstrániť"
         onConfirm={() => { if (toDelete) handleDelete(toDelete.id); }}
       />
-    </div>
+    </Page>
   );
 }

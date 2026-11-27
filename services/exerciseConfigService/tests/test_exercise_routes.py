@@ -1,4 +1,5 @@
 """Offline HTTP contract tests for exercise configuration."""
+import json
 import os
 import sys
 import tempfile
@@ -134,6 +135,36 @@ class ExerciseRoutes(OfflineCase):
         self.assertEqual(self.client.put(f"{base}/frame/0", json={}).status_code, 400)
         self.assertEqual(self.client.get(base).json, original)
         self.assertEqual(self.client.get(f"{base}/frame/99").status_code, 404)
+
+    def test_video_range_is_stored_in_config(self):
+        frames = [{"keypoints": {}, "nao_angles": [0.1]}]
+        cases = (
+            ({"json": {"name": "Json", "frames": frames, "video_range": {"start": 2.5, "end": 7}}},
+             {"start": 2.5, "end": 7}),
+            ({"data": {"name": "Form", "frames": json.dumps(frames), "video_range": '{"start": 3, "end": null}'},
+              "content_type": "multipart/form-data"},
+             {"start": 3, "end": None}),
+        )
+        for request, expected in cases:
+            with self.subTest(expected=expected):
+                created = self.client.post("/exercise/create", **request)
+                self.assertEqual(created.status_code, 201)
+                self.assertEqual(created.json["video_range"], expected)
+                self.assertEqual(self.client.get(f"/exercise/{created.json['id']}").json["video_range"], expected)
+        self.assertNotIn("video_range", self.create_exercise())
+
+    def test_invalid_video_range_is_rejected(self):
+        frames = [{"keypoints": {}, "nao_angles": [0.1]}]
+        for video_range in ("bad", [1, 2], {"end": 5}, {"start": -1}, {"start": True},
+                            {"start": 5, "end": 5}, {"start": 5, "end": 2}, {"start": 1, "end": "7"}):
+            with self.subTest(video_range=video_range):
+                result = self.client.post("/exercise/create", json={"name": "x", "frames": frames, "video_range": video_range})
+                self.assertEqual(result.status_code, 400)
+                self.assertIn("video_range", result.json["error"])
+        result = self.client.post("/exercise/create", data={"name": "x", "frames": json.dumps(frames), "video_range": "{"},
+                                  content_type="multipart/form-data")
+        self.assertEqual(result.status_code, 400)
+        self.assertEqual(self.client.get("/exercise/list").json, [])
 
     def test_insert_pose_uses_stubbed_voice_service(self):
         exercise_id = self.create_exercise()["id"]

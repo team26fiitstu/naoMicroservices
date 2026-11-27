@@ -1,14 +1,11 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import MainPage from "./pages/mainPage";
-import ExercisePage from "./pages/exercisePage";
-import VideoEditor from "./pages/videoEditor";
-import GroupPage from "./pages/groupPage";
-import ExercisesStore from "./pages/exercisesStore";
-import SimpleUploadPage from "./pages/simpleUploadPage";
-import VoiceCommandPage from "./pages/voiceCommandPage";
-import AudioRecorderAggregatorPage from "./pages/audioRecorderAggregatorPage";
-import { SideNav } from "./components/layout/sideNav";
-import { BottomNav } from "./components/layout/bottomNav";
+import MainPage from "@/pages/mainPage";
+import EditorPage from "@/pages/editorPage";
+import ExercisesPage from "@/pages/exercisesPage";
+import UploadPage from "@/pages/uploadPage";
+import VoicePage from "@/pages/voicePage";
+import { SideNav } from "@/components/layout/sideNav";
+import { BottomNav } from "@/components/layout/bottomNav";
 
 function App() {
   return (
@@ -17,13 +14,10 @@ function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Routes>
           <Route path="/" element={<MainPage />} />
-          <Route path="/upload" element={<SimpleUploadPage />} />
-          <Route path="/voice" element={<VoiceCommandPage />} />
-          <Route path="/exercise" element={<ExercisePage />} />
-          <Route path="/exercises" element={<ExercisesStore />} />
-          <Route path="/group" element={<GroupPage />} />
-          <Route path="/edit" element={<VideoEditor />} />
-          <Route path="/record" element={<AudioRecorderAggregatorPage />} />
+          <Route path="/upload" element={<UploadPage />} />
+          <Route path="/voice" element={<VoicePage />} />
+          <Route path="/exercises" element={<ExercisesPage />} />
+          <Route path="/edit" element={<EditorPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
