@@ -163,3 +163,26 @@ body {
   box-shadow: 0 0 0 1px var(--primary);
   cursor: pointer;
 }
+
+/* React Flow in theme colors, both themes through tokens */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--border);
+  --xy-edge-stroke: var(--muted-foreground);
+  --xy-edge-stroke-selected: var(--info);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--accent-foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: none;
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.react-flow__attribution a {
+  color: var(--muted-foreground);
+}

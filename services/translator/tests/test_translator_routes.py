@@ -63,6 +63,7 @@ class TranslatorRoutes(OfflineCase):
             result = self.upload("/exercise/from_image", "image", name="demo")
         self.assertEqual((result.status_code, result.json["id"]), (201, "ex1"))
         self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[1].kwargs["files"]["source"], (None, "image"))
         self.assertEqual(self.client.post("/exercise/from_image").status_code, 400)
         with patch.object(translator.requests, "post", return_value=response({}, 200)):
             self.assertEqual(self.upload("/exercise/from_image", "image").status_code, 422)
@@ -119,6 +120,7 @@ class TranslatorRoutes(OfflineCase):
                 kwargs = process.call_args.kwargs
                 self.assertEqual((kwargs["start_seconds"], kwargs["end_seconds"]), expected)
                 self.assertEqual(create.call_args.kwargs["video_range"], saved)
+                self.assertEqual(create.call_args.kwargs["source"], "video")
 
     def test_video_range_is_sent_to_config_service(self):
         with patch.object(translator, "request_with_retries", return_value=response({"id": "ex1"})) as send:
@@ -127,6 +129,10 @@ class TranslatorRoutes(OfflineCase):
         with patch.object(translator, "request_with_retries", return_value=response({"id": "ex1"})) as send:
             translator.call_exercise_create("demo", [])
         self.assertNotIn("video_range", send.call_args.kwargs["files"])
+        self.assertNotIn("source", send.call_args.kwargs["files"])
+        with patch.object(translator, "request_with_retries", return_value=response({"id": "ex1"})) as send:
+            translator.call_exercise_create("demo", [], source="image")
+        self.assertEqual(send.call_args.kwargs["files"]["source"], (None, "image"))
 
     def test_invalid_video_range_is_rejected_before_processing(self):
         cases = (

@@ -1,95 +1,47 @@
 import { useState } from "react";
-import { FileDropzone } from "@/components/ui/fileDropzone";
-import { SelectedFileCard } from "@/components/ui/selectedFileCard";
-import { StatusAlert } from "@/components/ui/statusAlert";
 import { Page } from "@/components/layout/page";
+import { StatusAlert } from "@/components/ui/statusAlert";
+import { MediaUpload } from "@/components/exercise/mediaUpload";
 import { useStatus } from "@/hooks/useStatus";
 import { failureText } from "@/lib/errors";
-import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
-import { appendVideoRange, type VideoRange } from "@/lib/videoRange";
-import { useSelectedFile } from "@/hooks/useSelectedFile";
-import { api } from "@/lib/api";
-
+import { createExerciseFromImage, createExerciseFromVideo, nameFromFile } from "@/lib/exercises";
+import type { VideoRange } from "@/lib/videoRange";
 
 export default function UploadPage() {
-  const { file, url: previewUrl, select, clear } = useSelectedFile();
-  const [isUploading, setIsUploading] = useState(false);
-  const [videoRange, setVideoRange] = useState<VideoRange | null>(null);
+  const [uploading, setUploading] = useState(false);
   const { status, show: showStatus, clear: clearStatus } = useStatus();
 
-  const selectFile = (selected: File) => {
-    select(selected);
-    setVideoRange(null);
+  // whole video at one frame per second, image as single frame
+  const create = async (file: File, range: VideoRange | null) => {
+    setUploading(true);
     clearStatus();
-  };
-
-  const clearFile = () => {
-    clear();
-    setVideoRange(null);
-    clearStatus();
-  };
-
-  const sendToBackend = async () => {
-    if (!file) { showStatus("error", "Najprv vyberte súbor."); return; }
-    setIsUploading(true);
-    clearStatus();
+    const name = nameFromFile(file);
     try {
-      const isVideo = file.type.startsWith("video/");
-
-      const exerciseName = file.name.replace(/\.[^/.]+$/, "");
-      const formData = new FormData();
-      if (isVideo) {
-        formData.append("video", file);
-        formData.append("name", exerciseName);
-        formData.append("fps", "1");
-        formData.append("seconds", "-1");
-        appendVideoRange(formData, videoRange);
-      } else {
-        formData.append("image", file);
-        formData.append("name", exerciseName);
-      }
-
-      await api(isVideo ? "/exercise/from_video" : "/exercise/from_image", { method: "POST", body: formData });
-
-      // reset selection so the same file is not uploaded twice
-      clear();
-      setVideoRange(null);
-      showStatus("success", `Cvičenie „${exerciseName}“ bolo vytvorené.`);
-    } catch (error) {
-      showStatus("error", failureText("Nahranie zlyhalo", error));
+      if (file.type.startsWith("video/")) await createExerciseFromVideo(file, range, { name, fps: 1, seconds: -1 });
+      else await createExerciseFromImage(file, name);
+      showStatus("success", `Cvičenie „${name}“ bolo vytvorené.`);
+      return true;
+    } catch (err) {
+      showStatus("error", failureText("Nahranie zlyhalo", err));
+      return false;
     } finally {
-      setIsUploading(false);
+      setUploading(false);
     }
   };
-
-  const isVideo = file?.type.startsWith("video/");
 
   return (
     <Page title="Nahranie" description="Nahrajte video alebo obrázok a vytvorte z neho cvičenie.">
       <StatusAlert status={status} />
-
-      {!file || !previewUrl ? (
-        <FileDropzone
-          onFile={selectFile}
-          onReject={() => showStatus("error", "Vyberte video alebo obrázok.")}
-          accept="video/*,image/*"
-          formats="MP4, MOV, AVI, WEBM, JPG, PNG"
-        />
-      ) : (
-        <SelectedFileCard
-          file={file}
-          onClear={clearFile}
-          onSubmit={sendToBackend}
-          submitLabel={isUploading ? "Nahrávanie…" : "Odoslať do API"}
-          submitting={isUploading}
-          // video waits for its range, otherwise the whole video would be processed
-          submitDisabled={isVideo && !videoRange}
-        >
-          {isVideo
-            ? <VideoTrimmer key={previewUrl} src={previewUrl} onChange={setVideoRange} />
-            : <img src={previewUrl} alt="Náhľad" className="w-full max-h-80 object-contain rounded-lg bg-muted" />}
-        </SelectedFileCard>
-      )}
+      <MediaUpload
+        accept="video/*,image/*"
+        formats="MP4, MOV, AVI, WEBM, JPG, PNG"
+        submitLabel={uploading ? "Nahrávanie…" : "Vytvoriť cvičenie"}
+        submitting={uploading}
+        onSubmit={create}
+        onSelect={clearStatus}
+        onClear={clearStatus}
+        onReject={() => showStatus("error", "Vyberte video alebo obrázok.")}
+      />
     </Page>
   );
 }

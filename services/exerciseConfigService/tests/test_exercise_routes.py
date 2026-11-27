@@ -1,4 +1,5 @@
 """Offline HTTP contract tests for exercise configuration."""
+import io
 import json
 import os
 import sys
@@ -165,6 +166,29 @@ class ExerciseRoutes(OfflineCase):
                                   content_type="multipart/form-data")
         self.assertEqual(result.status_code, 400)
         self.assertEqual(self.client.get("/exercise/list").json, [])
+    def test_list_reports_exercise_source(self):
+        frames = json.dumps([{"keypoints": {}, "nao_angles": [0.1]}])
+        sources = {}
+        for name, filename in (("video", "sample.mp4"), ("image", "photo.JPG"), ("poses", None)):
+            data = {"name": name, "frames": frames}
+            if filename:
+                data["media"] = (io.BytesIO(b"bytes"), filename)
+            created = self.client.post("/exercise/create", data=data, content_type="multipart/form-data")
+            self.assertEqual(created.status_code, 201)
+            sources[created.json["id"]] = name
+        listed = self.client.get("/exercise/list").json
+        self.assertEqual({e["id"]: e["source"] for e in listed}, sources)
+
+    def test_stored_source_wins_over_media_guess(self):
+        frames = json.dumps([{"keypoints": {}, "nao_angles": [0.1]}])
+        created = self.client.post("/exercise/create", content_type="multipart/form-data", data={
+            "name": "x", "frames": frames, "source": "image", "media": (io.BytesIO(b"bytes"), "clip.mp4"),
+        })
+        self.assertEqual((created.status_code, created.json["source"]), (201, "image"))
+        self.assertEqual(self.client.get("/exercise/list").json[0]["source"], "image")
+        invalid = self.client.post("/exercise/create", json={"name": "x", "frames": [{"nao_angles": [0.1]}], "source": "audio"})
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(len(self.client.get("/exercise/list").json), 1)
 
     def test_insert_pose_uses_stubbed_voice_service(self):
         exercise_id = self.create_exercise()["id"]

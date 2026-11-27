@@ -1,9 +1,5 @@
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
-import { FileDropzone } from "@/components/ui/fileDropzone";
-import { SelectedFileCard } from "@/components/ui/selectedFileCard";
-import { VideoTrimmer } from "@/components/exercise/videoTrimmer";
-import { useSelectedFile } from "@/hooks/useSelectedFile";
+import { MediaUpload } from "@/components/exercise/mediaUpload";
 import type { UploadSettings } from "@/hooks/useExerciseEditor";
 import type { VideoRange } from "@/lib/videoRange";
 
@@ -13,27 +9,13 @@ type Props = {
   uploading: boolean;
   onSelect: () => void;
   onReject: () => void;
-  onUpload: (file: File, range: VideoRange | null) => void;
+  onUpload: (file: File, range: VideoRange | null) => Promise<boolean>;
 };
 
 const clamp = (value: number, max: number) => Math.max(1, Math.min(max, value));
 
 // Frame settings, then video drop zone, then range choice before upload
 export function UploadPanel({ settings, onSettingsChange, uploading, onSelect, onReject, onUpload }: Props) {
-  const pending = useSelectedFile();
-  const [range, setRange] = useState<VideoRange | null>(null);
-
-  const select = (file: File) => {
-    onSelect();
-    setRange(null);
-    pending.select(file);
-  };
-
-  const clear = () => {
-    pending.clear();
-    setRange(null);
-  };
-
   return (
     <>
       <div className="flex items-center gap-6">
@@ -61,20 +43,15 @@ export function UploadPanel({ settings, onSettingsChange, uploading, onSelect, o
         </label>
       </div>
 
-      {pending.file && pending.url ? (
-        <SelectedFileCard
-          file={pending.file}
-          onClear={clear}
-          onSubmit={() => onUpload(pending.file!, range)}
-          submitLabel={uploading ? "Spracovanie videa…" : "Spracovať vybranú časť"}
-          submitting={uploading}
-          submitDisabled={!range}
-        >
-          <VideoTrimmer key={pending.url} src={pending.url} onChange={setRange} />
-        </SelectedFileCard>
-      ) : (
-        <FileDropzone onFile={select} onReject={onReject} accept="video/*" formats="MP4, MOV, AVI, WEBM" />
-      )}
+      <MediaUpload
+        accept="video/*"
+        formats="MP4, MOV, AVI, WEBM"
+        submitLabel={uploading ? "Spracovanie videa…" : "Spracovať vybranú časť"}
+        submitting={uploading}
+        onSubmit={onUpload}
+        onSelect={onSelect}
+        onReject={onReject}
+      />
     </>
   );
 }
