@@ -42,9 +42,9 @@ export function FrameList({ frames, exerciseId, poses, insertingAt, deletingAt, 
       </div>
 
       <div className="overflow-x-auto overflow-y-auto pb-3">
-        <div className="flex flex-col md:flex-row items-stretch gap-3 md:min-w-max">
+        <div className="flex flex-col md:flex-row items-stretch gap-(--layout-gap) md:min-w-max">
           {frames.map((frame, i) => (
-            <div key={`${frame.idx}-${i}`} className="flex items-stretch gap-3">
+            <div key={`${frame.idx}-${i}`} className="flex items-stretch gap-(--layout-gap)">
               {drag.overSlot === i && (
                 <div className="md:w-0.5 md:self-stretch h-0.5 md:h-auto w-full bg-primary rounded-full shrink-0" />
               )}

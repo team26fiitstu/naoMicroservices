@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
+/* content stretched to screen height while stretched to width, 97rem = max-w-7xl 80 + island 14 + 3 gaps of 1 */
+@custom-variant fill-screen (@media (width >= 64rem) and (width < 97rem));
+/* wider screen, content at max width, height not following screen */
+@custom-variant wide-screen (@media (width >= 97rem));
 
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
@@ -14,6 +18,8 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --radius: 0.625rem;
+  /* gap between window edges, islands and page blocks */
+  --layout-gap: 1rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
