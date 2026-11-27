@@ -12,7 +12,7 @@ export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
   return (
     <div
       className={cn(
-        "relative w-44 rounded-xl border px-3 py-2.5 shadow-sm",
+        "relative w-44 rounded-base border px-3 py-2.5 shadow-sm",
         // tints mixed with card color so canvas dots don't show through
         selected
           ? "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]"

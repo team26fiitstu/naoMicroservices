@@ -40,7 +40,7 @@ export function TransitionEdge({ id, source, target, data, selected }: EdgeProps
         <div
           style={{ transform: `translate(-50%, -50%) translate(${label.x}px, ${label.y}px)` }}
           className={cn(
-            "pointer-events-none absolute max-w-40 truncate rounded-md border bg-card px-1.5 py-0.5 text-[11px] text-foreground shadow-sm",
+            "pointer-events-none absolute max-w-40 truncate rounded-base border bg-card px-1.5 py-0.5 text-[11px] text-foreground shadow-sm",
             selected && "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]",
           )}
         >

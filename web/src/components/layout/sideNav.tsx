@@ -20,7 +20,7 @@ export function SideNav() {
             key={path}
             to={path}
             className={[
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+              "flex items-center gap-3 px-3 py-2 rounded-base text-sm transition-colors",
               active
                 ? "bg-primary/10 text-primary font-medium"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -33,7 +33,7 @@ export function SideNav() {
       })}
       <button
         onClick={toggle}
-        className="mt-auto flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="mt-auto flex items-center gap-3 px-3 py-2 rounded-base text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         {dark ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
         {dark ? "Svetlý režim" : "Tmavý režim"}
