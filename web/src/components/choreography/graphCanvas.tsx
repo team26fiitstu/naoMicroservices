@@ -59,7 +59,7 @@ export function GraphCanvas({ graph, exercises, selection, onSelect, onMove, onO
   })), [graph, selection, marker, selectedMarker]);
 
   return (
-    <div className="h-[420px] md:h-[560px]">
+    <div className="h-[420px] fill-screen:h-auto fill-screen:min-h-[420px] fill-screen:flex-1 wide-screen:h-[560px]">
       <svg className="absolute h-0 w-0">
         <defs>
           {[[marker, "fill-muted-foreground"], [selectedMarker, "fill-info"]].map(([markerId, fill]) => (

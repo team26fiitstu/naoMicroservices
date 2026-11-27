@@ -38,6 +38,7 @@ function ChoreographyView({ id }: { id: string }) {
     <Page
       title="Choreografia"
       description="Rozložte stavy, nastavte počiatočný a otvorte stav v editore."
+      fill
       actions={graph && (
         <Button size="sm" variant={adding ? "secondary" : "outline"} onClick={() => setAdding((open) => !open)}>
           <Plus className="h-3.5 w-3.5" />
@@ -60,10 +61,11 @@ function ChoreographyView({ id }: { id: string }) {
         />
       )}
 
-      {loading && !graph && <LoadingState text="Načítavam choreografiu…" />}
+      {loading && !graph && <LoadingState text="Načítavam choreografiu…" className="fill-screen:flex-1" />}
 
       {!loading && failed && (
         <EmptyState
+          className="fill-screen:flex-1"
           icon={Workflow}
           text="Choreografiu sa nepodarilo načítať."
           action={<Button variant="outline" size="sm" onClick={choreography.reload}>Skúsiť znova</Button>}
@@ -71,7 +73,7 @@ function ChoreographyView({ id }: { id: string }) {
       )}
 
       {graph && (
-        <div className="space-y-3">
+        <div className="space-y-3 fill-screen:flex fill-screen:flex-1 fill-screen:flex-col">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium text-foreground">Stavy</h2>
             <Badge variant="secondary" className="tabular-nums">{graph.states.length}</Badge>
@@ -80,7 +82,7 @@ function ChoreographyView({ id }: { id: string }) {
               Stavy presúvate ťahaním
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
+          <div className="grid grid-cols-1 gap-(--layout-gap) fill-screen:flex-1 lg:grid-cols-[1fr_280px]">
             <Card className="overflow-hidden p-0">
               <GraphCanvas graph={graph} exercises={exerciseById} selection={selection} onSelect={setSelection} onMove={choreography.moveState} onOpen={openInEditor} />
             </Card>

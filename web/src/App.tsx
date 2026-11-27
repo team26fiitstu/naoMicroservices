@@ -14,7 +14,7 @@ const ChoreographyPage = lazy(() => import("@/pages/choreographyPage"));
 
 function App() {
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex md:gap-(--layout-gap) md:p-(--layout-gap)">
       <SideNav />
       <div className="flex-1 flex flex-col min-w-0">
         <Suspense>
