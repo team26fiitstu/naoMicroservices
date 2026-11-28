@@ -41,7 +41,9 @@ curl -X POST http://localhost:7000/exercise/<exercise_id>/run
 curl -X POST http://localhost:5000/temperature/log/stop
 ```
 
-Logs are stored in `TEMPERATURE_LOG_HOST_DIR` from the root `.env`, by default `logs/temperature/` in the repository root. Docker Compose mounts it into the container as `TEMPERATURE_LOG_DIR`. The default directory is not committed. Each log produces:
+Logs are stored in `TEMPERATURE_LOG_HOST_DIR` from the root `.env`, by default `logs/temperature/` in the repository root. Docker Compose mounts it into the container as `TEMPERATURE_LOG_DIR`. The default directory is not committed. In Kubernetes, logs are stored in the `temperature-logs-pvc` volume claim.
+
+Each log produces:
 
 - `<log_id>.csv`: one row per joint and sample, written as the log runs:
   `timestamp, elapsed_s, joint, temperature_c, status, position_rad, current_a`
@@ -68,4 +70,3 @@ For every recording, write down in the Jira issue: software commit SHA or tag, d
 
 - Choregraphe's virtual robot only provides `Temperature/Sensor/Status` (always 0); temperature, position and current are logged as empty fields. Heating can only be measured on a physical NAO.
 - The running log is kept in memory. If `naoRobotAPI` restarts during a log, the CSV up to that point remains, but no summary is written.
-- The Kubernetes manifest has no volume for the logs.

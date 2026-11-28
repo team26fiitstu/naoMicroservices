@@ -24,7 +24,7 @@ spec:
           volumeMounts:
             - name: pictures
               mountPath: /home/ubuntu/Pictures
-          image: berserkchmonya/translator:latest
+          image: ghcr.io/team26fiitstu/translator:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 7000

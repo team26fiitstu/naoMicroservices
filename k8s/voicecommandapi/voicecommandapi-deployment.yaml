@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: voicecommandapi
-          image: berserkchmonya/voice-command-api:latest
+          image: ghcr.io/team26fiitstu/voice-command-api:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

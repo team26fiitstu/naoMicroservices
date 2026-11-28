@@ -16,15 +16,30 @@ spec:
     spec:
       containers:
         - name: audio-to-text-converter
-          image: ghcr.io/team26fiitstu/audio-to-text-converter:latest
+          image: ghcr.io/team26fiitstu/audio-to-text-converter:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9901
+          # Measured with large-v1: one request needs about 2 GiB of process
+          # memory. The service loads the model on every request and memory
+          # is not always freed, so the pod can reach the limit after a few
+          # requests and be restarted.
+          resources:
+            requests:
+              memory: 4Gi
+            limits:
+              memory: 6Gi
           env:
             - name: FLASK_ENV
               value: "production"
             - name: COMPOSE_NETWORK
               value: "true"
+          # Downloaded models (Hugging Face, torch) are cached here. An
+          # emptyDir survives container restarts inside the pod, so the
+          # ~3 GB model is not downloaded again after an OOM restart.
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache
           readinessProbe:
             httpGet:
               path: /test
@@ -37,6 +52,10 @@ spec:
               port: 9901
             initialDelaySeconds: 60
             periodSeconds: 30
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 8Gi
 ---
 apiVersion: v1
 kind: Service

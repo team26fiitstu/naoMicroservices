@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: berserkchmonya/web:latest
+          image: ghcr.io/team26fiitstu/web:sha-a106aee
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

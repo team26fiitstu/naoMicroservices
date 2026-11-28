@@ -6,6 +6,8 @@ metadata:
     app: naorobotapi
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: naorobotapi
@@ -16,13 +18,15 @@ spec:
     spec:
       containers:
       - name: naorobotapi
-        image: berserkchmonya/nao-robot-api:latest
+        image: ghcr.io/team26fiitstu/nao-robot-api:sha-a106aee
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
         volumeMounts:
         - name: pictures
           mountPath: /images
+        - name: temperature-logs
+          mountPath: /logs/temperature
         env:
         - name: FLASK_ENV
           value: "production"
@@ -36,6 +40,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: TEMPERATURE_LOG_DIR
+          value: "/logs/temperature"
         readinessProbe:
           httpGet:
             path: /
@@ -53,6 +59,9 @@ spec:
         hostPath:
           path: /home/ubuntu/Pictures
           type: DirectoryOrCreate
+      - name: temperature-logs
+        persistentVolumeClaim:
+          claimName: temperature-logs-pvc
 ---
 apiVersion: v1
 kind: Service
