@@ -172,11 +172,10 @@ def validate_choreography(doc) -> list:
     if not isinstance(doc, dict):
         return ["document must be a JSON object"]
 
-    graph = _sanitize_doc(doc)
-    graph["schema_version"] = doc.get("schema_version", 1)
-    errors = _schema_errors(graph, CHOREOGRAPHY_INPUT_VALIDATOR)
+    errors = _schema_errors(doc, CHOREOGRAPHY_INPUT_VALIDATOR)
     if errors:
         return errors
+    graph = _sanitize_doc(doc)
     if not graph["name"].strip():
         errors.append("name must not be blank")
 
@@ -223,46 +222,37 @@ def validate_choreography(doc) -> list:
 # =============================================================================
 
 def _sanitize_state(state) -> dict:
-    """Keep defined state fields and default legacy exercise references."""
-    if not isinstance(state, dict):
-        return state
+    """Keep the state fields defined by the choreography schema."""
     return {
-        "state_id": state.get("state_id"),
-        "exercise_id": state.get("exercise_id", state.get("state_id")),
-        "label": state.get("label"),
-        "x": state.get("x"),
-        "y": state.get("y"),
+        "state_id": state["state_id"],
+        "exercise_id": state["exercise_id"],
+        "label": state["label"],
+        "x": state["x"],
+        "y": state["y"],
     }
 
 
 def _sanitize_transition(transition) -> dict:
     """Keep only id, from, to, label from a single transition entry."""
-    if not isinstance(transition, dict):
-        return transition
     return {
-        "id": transition.get("id"),
-        "from": transition.get("from"),
-        "to": transition.get("to"),
-        "label": transition.get("label"),
+        "id": transition["id"],
+        "from": transition["from"],
+        "to": transition["to"],
+        "label": transition["label"],
     }
 
 
 def _sanitize_doc(doc: dict) -> dict:
     """
-    Keep only the fields that make up a choreography document, at every
-    level (the document itself, and each state/transition entry). The
-    request body is otherwise stored as-is, so unknown/extra fields sent
-    by a client would end up persisted in the file; this keeps stored
-    documents clean.
+    Keep the client-owned fields from a schema-validated choreography body.
+    Generated metadata is added by create_choreography/replace_choreography.
     """
-    states = doc.get("states")
-    transitions = doc.get("transitions", [])
     return {
-        "schema_version": doc.get("schema_version", 1),
-        "name": doc.get("name"),
-        "initial_state": doc.get("initial_state"),
-        "states": [_sanitize_state(s) for s in states] if isinstance(states, list) else states,
-        "transitions": [_sanitize_transition(t) for t in transitions] if isinstance(transitions, list) else transitions,
+        "schema_version": doc["schema_version"],
+        "name": doc["name"],
+        "initial_state": doc["initial_state"],
+        "states": [_sanitize_state(state) for state in doc["states"]],
+        "transitions": [_sanitize_transition(transition) for transition in doc["transitions"]],
     }
 
 
@@ -288,16 +278,7 @@ def create_choreography(doc: dict) -> dict:
 def get_choreography(choreography_id: str) -> dict:
     if not choreography_exists(choreography_id):
         raise FileNotFoundError(f"Choreography '{choreography_id}' not found")
-    # Older graph files used state_id for both the state and exercise ID.
-    # Add the explicit field to responses without rewriting stored files.
-    doc = _read_json(choreography_path(choreography_id))
-    if isinstance(doc, dict) and isinstance(doc.get("states"), list):
-        doc["states"] = [
-            {**state, "exercise_id": state.get("exercise_id", state.get("state_id"))}
-            if isinstance(state, dict) else state
-            for state in doc["states"]
-        ]
-    return doc
+    return _read_json(choreography_path(choreography_id))
 
 
 def replace_choreography(choreography_id: str, doc: dict) -> dict:
@@ -350,7 +331,7 @@ def choreographies_using(exercise_id: str) -> list:
     result = []
     for entry, doc in _iter_choreography_documents():
         exercise_ids = {
-            state.get("exercise_id", state.get("state_id"))
+            state.get("exercise_id")
             for state in doc.get("states", [])
             if isinstance(state, dict)
         }
