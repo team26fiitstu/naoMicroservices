@@ -1,49 +1,80 @@
 # Exercise and choreography file formats
 
-The service stores exercise and choreography documents as JSON under
-`EXERCISES_DIR`. Their Draft 2020-12 schemas live in `app/schemas/`.
-`$schema` identifies the JSON Schema draft; `schema_version` identifies the
-NAOMI file format.
+- Exercise and choreography documents are JSON files stored under
+  `EXERCISES_DIR`.
+- Their Draft 2020-12 JSON Schemas are in `app/schemas/`.
+- `$schema` identifies the JSON Schema draft; `schema_version` identifies the
+  NAOMI document format.
 
 ## Exercise config
 
-`app/schemas/exercise-config.schema.json` describes each exercise's
-`config.json`. Version 1 contains:
+Schema: `app/schemas/exercise-config.schema.json`  
+File: `<exercise-id>/config.json`
 
-- `schema_version`: `1`.
-- `id`: the eight-character exercise ID.
-- `name`, `created_at`, and `pose_engine` (`mediapipe` or `yolo`).
-- `repetitions`: a positive integer.
-- `frame_sequence`: non-negative frame IDs in playback order. Repeated IDs are
-  allowed.
-- Optional `video_range`, `calories`, and `description`.
+Version 1 fields:
 
-The version 1 schema allows additional config properties so existing custom
-fields remain preserved; the listed fields are the service's defined contract.
+- Required:
+  - `schema_version`: `1`.
+  - `id`: the eight-character exercise ID.
+  - `name`: non-empty exercise name.
+  - `created_at`: timestamp string.
+  - `pose_engine`: `mediapipe` or `yolo`.
+  - `repetitions`: positive integer.
+  - `frame_sequence`: non-negative frame IDs in playback order. Repeated IDs
+    are allowed.
+- Optional:
+  - `video_range`.
+  - `calories`.
+  - `description`.
+- Additional properties are allowed so existing custom config fields remain
+  preserved.
 
-Old exercise configs have no `schema_version`; the service treats a missing
-version as version 1 when reading and writing them. New configs contain the
-explicit version. This requires no bulk migration. Timestamps remain strings so
-older timezone-naive values remain valid; new records use UTC ISO 8601.
+Version handling:
+
+- If an older config has no `schema_version`, the service treats it as version
+  `1` when reading or writing it.
+- New exercise configs store `schema_version: 1` explicitly.
+- No bulk migration is required.
+- Timestamps remain strings so older timezone-naive values remain valid; new
+  records use UTC ISO 8601.
 
 ## Choreography
 
-`app/schemas/choreography.schema.json` describes choreography files in
-`EXERCISES_DIR/_choreographies/`. Version 1 contains `schema_version`, a
-generated choreography `id`, `name`, `initial_state`, `states`, `transitions`,
-and generated `created_at` and `updated_at` timestamps.
+Schema: `app/schemas/choreography.schema.json`  
+File: `EXERCISES_DIR/_choreographies/<choreography-id>.json`
 
-Each state has an independent `id`, an `exercise_id`, a display `label`, and
-editor coordinates `x` and `y`. `initial_state` and transition `from`/`to`
-values refer to state IDs in the same graph. The state `id` is a short string
-such as `s1`; `exercise_id` is a string containing an existing exercise's
-eight-character ID. A transition contains only its `id`, `from`, `to`, and
-`label`; it has no conditions or repetition counters. States and transitions
-are saved as part of the whole graph.
+Version 1 document fields:
 
-The service treats a missing `schema_version` in create/update requests or
-stored files as version 1; newly written graphs store the version explicitly.
-It validates the complete request against the JSON Schema, then checks
-relationships JSON Schema cannot express:
-referenced exercises exist, state and transition IDs are unique, the initial
-state belongs to the graph, and transition endpoints belong to the graph.
+- `schema_version`: `1`.
+- `id`: generated eight-character choreography ID.
+- `name`: non-empty choreography name.
+- `initial_state`: ID of a state in this graph.
+- `states`: non-empty list of states.
+- `transitions`: list of transitions; it can be empty.
+- `created_at` and `updated_at`: generated timestamp strings.
+
+State fields:
+
+- `id`: unique graph state ID, such as `s1`.
+- `exercise_id`: string ID of an existing exercise (eight lowercase
+  hexadecimal characters).
+- `label`: non-empty display label.
+- `x` and `y`: editor coordinates.
+
+Transition fields:
+
+- `id`: non-empty transition ID.
+- `from` and `to`: state IDs in this graph.
+- `label`: non-empty transition label.
+- Transitions do not contain conditions or repetition counters.
+
+Validation and version handling:
+
+- If `schema_version` is missing on create/update requests or in a stored
+  document, the service treats it as version `1`.
+- Newly written choreography files store `schema_version: 1` explicitly.
+- The service rejects properties that are not defined by the choreography
+  schema.
+- It also checks relationships the JSON Schema cannot express: referenced
+  exercises exist, state and transition IDs are unique, `initial_state` names a
+  state in the graph, and transition endpoints name states in the graph.
