@@ -9,7 +9,8 @@ RUN npm run build
 
 
 # --- Production stage ---
-FROM nginx:alpine
+# Pinned: nginx < 1.31.9 is affected by CVE-2026-123007 (NGINX2Root), see SCRUM-106.
+FROM nginx:1.31.10-alpine
 
 # Copy Vite production build to Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html

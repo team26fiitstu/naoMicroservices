@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { failureText } from "@/lib/errors";
+import { failureText, robotCommandFailureText } from "@/lib/errors";
 import type { StatusType } from "@/hooks/useStatus";
 import {
   NO_VOICE_TEXT,
@@ -129,7 +129,7 @@ export function useFrameVoiceLine(
         json: { voice_lines: { voice_lines_configs: { entire: { translation: text } }, lang: language, speed } },
       });
     } catch (err) {
-      showStatus("error", failureText("Robot nemohol hovoriť", err));
+      showStatus("error", robotCommandFailureText("Robot nemohol hovoriť", err));
     } finally {
       setSaying(false);
     }

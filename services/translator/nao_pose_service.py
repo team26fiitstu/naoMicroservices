@@ -19,6 +19,7 @@ import math
 import uuid
 import json
 import tempfile
+import threading
 
 from flask import Flask, request, jsonify
 import requests
@@ -27,12 +28,15 @@ from arms_translator import translate_arms
 from video_pose_processor import process_video_bytes
 from flask_cors import CORS
 from runtime_config import service_host
+from choreography_runs import ChoreographyRuns
 from http_retry import request_with_retries
 
 POSE_API_URL = "http://%s:6001/media_pipe_pose/pose_from_image" % service_host("skeletonfinderapi")
 SET_POSE_URL = "http://%s:5000/setting_pose/setPose" % service_host("naorobotapi")
 VOICE_LINES_URL = "http://%s:5000/voiceLines/applyVoiceLine" % service_host("naorobotapi")
+ROBOT_RESERVATION_URL = "http://%s:5000/control/reservation" % service_host("naorobotapi")
 EXERCISE_CONFIG_URL = "http://%s:7001" % service_host("exercise-config-service")
+_robot_run_context = threading.local()
 
 # name of unnamed exercise, Slovak UI
 DEFAULT_EXERCISE_NAME = "Nepomenované cvičenie"
@@ -115,7 +119,9 @@ def call_nao_set_pose(angles):
     Call NAO pose endpoint with the given angles.
     """
     payload = {"angles": angles}
-    resp = request_with_retries("POST", SET_POSE_URL, json=payload, timeout=15,
+    token = getattr(_robot_run_context, "token", None)
+    headers = {"X-Robot-Run-Token": token} if token else None
+    resp = request_with_retries("POST", SET_POSE_URL, json=payload, headers=headers, timeout=15,
                               idempotent=False)
     resp.raise_for_status()
     return resp.json()
@@ -126,11 +132,114 @@ def call_nao_voice_lines(voice_lines_configs):
     Call NAO to say voice line.
     """
     payload = {"voice_lines": voice_lines_configs}
-    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, timeout=15,
+    token = getattr(_robot_run_context, "token", None)
+    headers = {"X-Robot-Run-Token": token} if token else None
+    resp = request_with_retries("POST", VOICE_LINES_URL, json=payload, headers=headers, timeout=15,
                               idempotent=False,
                               max_attempts=1)  # a repeated voice line is audible: never retry
     resp.raise_for_status()
     return resp.json()
+
+
+def reserve_robot_for_run(run_id):
+    try:
+        resp = request_with_retries("POST", ROBOT_RESERVATION_URL,
+                                    json={"token": run_id}, timeout=5,
+                                    idempotent=True, max_attempts=2)
+        if resp.status_code == 409:
+            return {"error": "robot is reserved by another run"}, 409
+        resp.raise_for_status()
+        if resp.json().get("success") is not True:
+            raise ValueError("robot did not confirm reservation")
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        return {"error": "failed to reserve robot", "detail": str(exc)}, 502
+    return None
+
+
+def release_robot_reservation(run_id):
+    try:
+        resp = request_with_retries("DELETE", ROBOT_RESERVATION_URL,
+                                    json={"token": run_id}, timeout=5,
+                                    idempotent=True, max_attempts=2)
+        resp.raise_for_status()
+    except requests.RequestException:
+        app.logger.exception("failed to release robot reservation for run %s", run_id)
+        return False
+    return True
+
+
+def fetch_exercise(exercise_id, repetitions_override=None):
+    """Return stored playback frames and repetition count, or an HTTP error tuple."""
+    try:
+        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+        if resp.status_code == 404:
+            return None, ({"error": f"Exercise '{exercise_id}' not found"}, 404)
+        resp.raise_for_status()
+        frames = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        return None, ({"error": "failed to fetch frames", "detail": str(exc)}, 502)
+    if not isinstance(frames, list):
+        return None, ({"error": "invalid exercise frames"}, 502)
+    if not frames:
+        return None, ({"error": "exercise has no frames"}, 422)
+    if any(not isinstance(frame, dict) for frame in frames):
+        return None, ({"error": "invalid exercise frames"}, 502)
+    if not any(frame.get("voice_lines") or frame.get("nao_angles") for frame in frames):
+        return None, ({"error": "exercise has no playable content"}, 422)
+
+    repetitions = repetitions_override
+    if repetitions is None:
+        try:
+            resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
+            if resp.status_code == 404:
+                return None, ({"error": f"Exercise '{exercise_id}' not found"}, 404)
+            resp.raise_for_status()
+            repetitions = resp.json().get("repetitions", 1)
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            return None, ({"error": "failed to fetch exercise config", "detail": str(exc)}, 502)
+    try:
+        repetitions = int(repetitions)
+        if repetitions < 1:
+            raise ValueError
+    except (ValueError, TypeError):
+        return None, ({"error": "repetitions must be a positive integer"}, 400)
+    return (frames, repetitions), None
+
+
+def play_exercise(exercise_id, repetitions_override=None, stop_on_error=False,
+                  cancelled=None):
+    fetched, error = fetch_exercise(exercise_id, repetitions_override)
+    if error:
+        return None, error
+    frames, repetitions = fetched
+    results = []
+    for rep in range(repetitions):
+        for frame in frames:
+            if cancelled and cancelled():
+                return playback_result(exercise_id, repetitions, frames, results), None
+            for kind, payload, sender in (
+                ("voice", frame.get("voice_lines"), call_nao_voice_lines),
+                ("pose", frame.get("nao_angles", []), call_nao_set_pose),
+            ):
+                if not payload:
+                    continue
+                item = {"rep": rep, "type": kind, "frame_index": frame.get("frame_index")}
+                try:
+                    robot_result = sender(payload)
+                    if not isinstance(robot_result, dict) or robot_result.get("success") is not True:
+                        raise RuntimeError("robot did not confirm success")
+                    item["status"] = "ok"
+                except (requests.RequestException, RuntimeError) as exc:
+                    item.update(status="error", detail=str(exc))
+                results.append(item)
+                if stop_on_error and item["status"] == "error":
+                    return playback_result(exercise_id, repetitions, frames, results), None
+    return playback_result(exercise_id, repetitions, frames, results), None
+
+
+def playback_result(exercise_id, repetitions, frames, results):
+    return {"exercise_id": exercise_id, "repetitions": repetitions,
+            "frames_per_rep": len(frames), "total_poses_sent": len(results), "results": results}
     
 
 # =========================
@@ -367,62 +476,93 @@ def exercise_run(exercise_id):
     Response:
         200 JSON: {exercise_id, repetitions, frames_per_rep, total_poses_sent, results[]}
     """
-    data = request.get_json(silent=True) or {}
-
-    # 1) Fetch frames from exerciseconfigservice
+    data = request.get_json(silent=True)
+    if data is not None and not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+    claimed, conflict = choreography_runs.claim_standalone()
+    if not claimed:
+        return jsonify({"error": conflict}), 409
     try:
-        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}/frames", timeout=10)
+        result, error = play_exercise(exercise_id, (data or {}).get("repetitions"))
+        return _run_response(error or (result, 200))
+    finally:
+        choreography_runs.standalone_lock.release()
+
+
+def _load_graph(choreography_id):
+    try:
+        resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/choreography/{choreography_id}", timeout=10)
         if resp.status_code == 404:
-            return jsonify({"error": f"Exercise '{exercise_id}' not found"}), 404
+            return None, ({"error": f"Choreography '{choreography_id}' not found"}, 404)
         resp.raise_for_status()
-        frames = resp.json()
-    except requests.RequestException as e:
-        return jsonify({"error": "failed to fetch frames", "detail": str(e)}), 502
+        graph = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        return None, ({"error": "failed to fetch choreography", "detail": str(exc)}, 502)
+    # The config service owns graph validation. Check only the response envelope.
+    if (not isinstance(graph, dict) or not isinstance(graph.get("initial_state"), str)
+            or not isinstance(graph.get("states"), list) or not isinstance(graph.get("transitions"), list)):
+        return None, ({"error": "invalid choreography response"}, 502)
+    return graph, None
 
-    if not frames:
-        return jsonify({"error": "exercise has no frames"}), 422
 
-    # 2) Get repetitions from config (or override from request)
-    repetitions = data.get("repetitions")
-    if repetitions is None:
-        try:
-            cfg_resp = request_with_retries("GET", f"{EXERCISE_CONFIG_URL}/exercise/{exercise_id}", timeout=10)
-            cfg_resp.raise_for_status()
-            repetitions = cfg_resp.json().get("repetitions", 1)
-        except requests.RequestException as e:
-            return jsonify({"error": "failed to fetch exercise config", "detail": str(e)}), 502
-
+def _play_choreography_state(run_id, target, cancelled):
+    _robot_run_context.token = run_id
     try:
-        repetitions = int(repetitions)
-        if repetitions < 1:
-            raise ValueError
-    except (ValueError, TypeError):
-        return jsonify({"error": "repetitions must be a positive integer"}), 400
+        return play_exercise(target, stop_on_error=True, cancelled=cancelled)
+    finally:
+        del _robot_run_context.token
 
-    # 3) Loop repetitions × frames → send each to NAO
-    results = []
-    for rep in range(repetitions):
-        for frame in frames:
-            if voice_lines := frame.get("voice_lines"):
-                try:
-                    nao_response = call_nao_voice_lines(voice_lines)
-                    results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "ok"})
-                except requests.RequestException as e:
-                    results.append({"rep": rep, "type": "voice", "frame_index": frame.get("frame_index"), "status": "error", "detail": str(e)})
-            angles = frame.get("nao_angles", [])
-            try:
-                nao_response = call_nao_set_pose(angles)
-                results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "ok"})
-            except requests.RequestException as e:
-                results.append({"rep": rep, "type": "pose", "frame_index": frame.get("frame_index"), "status": "error", "detail": str(e)})
 
-    return jsonify({
-        "exercise_id": exercise_id,
-        "repetitions": repetitions,
-        "frames_per_rep": len(frames),
-        "total_poses_sent": len(results),
-        "results": results,
-    }), 200
+choreography_runs = ChoreographyRuns(
+    lambda ident: _load_graph(ident),
+    lambda token: reserve_robot_for_run(token),
+    lambda token: release_robot_reservation(token),
+    _play_choreography_state,
+    app.logger,
+)
+
+
+def _run_response(result):
+    payload, status = result
+    return jsonify(payload), status
+
+
+@app.route("/choreography/<choreography_id>/run", methods=["POST"])
+def start_choreography_run(choreography_id):
+    return _run_response(choreography_runs.start_choreography_run(choreography_id))
+
+
+@app.route("/run/current", methods=["GET"])
+def current_choreography_run():
+    return _run_response(choreography_runs.current_choreography_run())
+
+
+@app.route("/run/<run_id>", methods=["GET"])
+def get_choreography_run(run_id):
+    return _run_response(choreography_runs.get_choreography_run(run_id))
+
+
+@app.route("/run/<run_id>/signal", methods=["POST"])
+def signal_choreography_run(run_id):
+    data = request.get_json(silent=True)
+    value = data.get("transition_id") if isinstance(data, dict) else None
+    if not isinstance(value, str) or not value:
+        return jsonify({"error": "JSON transition_id is required"}), 400
+    return _run_response(choreography_runs.signal_choreography_run(run_id, value))
+
+
+@app.route("/run/<run_id>/goto", methods=["POST"])
+def goto_choreography_state(run_id):
+    data = request.get_json(silent=True)
+    value = data.get("state_id") if isinstance(data, dict) else None
+    if not isinstance(value, str) or not value:
+        return jsonify({"error": "JSON state_id is required"}), 400
+    return _run_response(choreography_runs.goto_choreography_state(run_id, value))
+
+
+@app.route("/run/<run_id>/stop", methods=["POST"])
+def stop_choreography_run(run_id):
+    return _run_response(choreography_runs.stop_choreography_run(run_id))
 
 
 def parse_time_range(form):

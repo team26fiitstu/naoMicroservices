@@ -236,6 +236,23 @@ class TranslatorRoutes(OfflineCase):
             translator.call_nao_voice_lines({"lang": "English"})
         self.assertEqual(send.call_args.kwargs["max_attempts"], 1)
 
+    def test_robot_reservation_and_owner_header(self):
+        with patch.object(translator, "request_with_retries", return_value=response({"success": True})) as send:
+            self.assertIsNone(translator.reserve_robot_for_run("run-a"))
+            self.assertEqual(send.call_args.args[:2], ("POST", translator.ROBOT_RESERVATION_URL))
+            translator._robot_run_context.token = "run-a"
+            try:
+                translator.call_nao_set_pose([0.1] * 22)
+                self.assertEqual(send.call_args.kwargs["headers"], {"X-Robot-Run-Token": "run-a"})
+                translator.call_nao_voice_lines({"lang": "English"})
+                self.assertEqual(send.call_args.kwargs["headers"], {"X-Robot-Run-Token": "run-a"})
+            finally:
+                del translator._robot_run_context.token
+            translator.release_robot_reservation("run-a")
+            self.assertEqual(send.call_args.args[:2], ("DELETE", translator.ROBOT_RESERVATION_URL))
+            self.assertIs(send.call_args.kwargs["idempotent"], True)
+            self.assertEqual(send.call_args.kwargs["max_attempts"], 2)
+
 
 
     def test_run_exercise(self):
@@ -267,6 +284,7 @@ class TranslatorRoutes(OfflineCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual([call.args[0] for call in move.call_args_list], [[0.1] * 22, [0.2] * 22, [0.1] * 22])
         speak.assert_called_once_with({"lang": "English"})
+        self.assertEqual(result.json["results"][0]["type"], "voice")
 
     def test_crud_proxies(self):
         cases = (
