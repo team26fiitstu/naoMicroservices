@@ -14,6 +14,8 @@ export function useChoreography(id: string) {
   const { status, show: showStatus } = useStatus();
   // latest graph for changes made after awaits, render closure may be stale
   const latest = useRef<Choreography | null>(null);
+  // saves sent one after another, so older graph never overwrites newer one on server
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   const show = (next: Choreography | null) => {
     latest.current = next;
@@ -43,12 +45,15 @@ export function useChoreography(id: string) {
     if (!latest.current) return false;
     const next = change(latest.current);
     show(next);
+    const save = queue.current.then(() => saveChoreography(next));
+    queue.current = save.catch(() => {});
     try {
-      await saveChoreography(next);
+      await save;
       return true;
     } catch (err) {
       showStatus("error", failureText("Uloženie zlyhalo", err));
-      load();
+      // reload after queued saves finish, so screen shows final server copy
+      queue.current.then(load);
       return false;
     }
   };
