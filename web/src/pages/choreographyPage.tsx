@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Move, Plus, Workflow } from "lucide-react";
+import { Loader2, Move, Play, Plus, Square, Workflow } from "lucide-react";
 import { Page } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,9 @@ import { StatusAlert } from "@/components/ui/statusAlert";
 import { AddStatePanel } from "@/components/choreography/addStatePanel";
 import { GraphCanvas } from "@/components/choreography/graphCanvas";
 import { GraphInspector } from "@/components/choreography/graphInspector";
+import { RunPanel } from "@/components/choreography/runPanel";
 import { useChoreography } from "@/hooks/useChoreography";
+import { useChoreographyRun } from "@/hooks/useChoreographyRun";
 import type { ChoreographyState, GraphSelection } from "@/lib/choreography";
 import { failureText } from "@/lib/errors";
 
@@ -27,6 +29,8 @@ function ChoreographyView({ id }: { id: string }) {
   const navigate = useNavigate();
   const choreography = useChoreography(id);
   const { graph, exercises, loading, failed, showStatus } = choreography;
+  const control = useChoreographyRun(id, showStatus);
+  const { run } = control;
   const [selection, setSelection] = useState<GraphSelection>(null);
   const [adding, setAdding] = useState(false);
   const [toRemove, setToRemove] = useState<ChoreographyState | null>(null);
@@ -39,18 +43,33 @@ function ChoreographyView({ id }: { id: string }) {
       title="Choreografia"
       description="Rozložte stavy, nastavte počiatočný a otvorte stav v editore."
       fill
-      actions={graph && (
-        <Button size="sm" variant={adding ? "secondary" : "outline"} onClick={() => setAdding((open) => !open)}>
-          <Plus className="h-3.5 w-3.5" />
-          Pridať stav
+      actions={graph && (run ? (
+        <Button size="sm" variant="outline" onClick={control.stop} disabled={control.sending}>
+          <Square className="h-3.5 w-3.5" />
+          Zastaviť
         </Button>
-      )}
+      ) : (
+        <>
+          <Button size="sm" variant={adding ? "secondary" : "outline"} onClick={() => setAdding((open) => !open)}>
+            <Plus className="h-3.5 w-3.5" />
+            Pridať stav
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => { setAdding(false); setSelection(null); control.start(); }}
+            disabled={control.sending}
+          >
+            {control.sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            Spustiť
+          </Button>
+        </>
+      ))}
     >
       <StatusAlert status={choreography.status} />
 
       {graph && <NameInput name={graph.name} label="Názov choreografie" onRename={choreography.rename} className="w-64" />}
 
-      {adding && graph && (
+      {adding && graph && !run && (
         <AddStatePanel
           exercises={exercises.filter((e) => !graph.states.some((s) => s.state_id === e.id))}
           onAddExisting={choreography.addState}
@@ -79,23 +98,37 @@ function ChoreographyView({ id }: { id: string }) {
             <Badge variant="secondary" className="tabular-nums">{graph.states.length}</Badge>
             <p className="ml-2 flex items-center gap-1 text-xs text-muted-foreground">
               <Move className="h-3.5 w-3.5" />
-              Stavy presúvate ťahaním
+              {run ? "Klik na zelený prechod pošle signál" : "Stavy presúvate ťahaním"}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-(--layout-gap) fill-screen:flex-1 lg:grid-cols-[1fr_280px]">
             <Card className="overflow-hidden p-0">
-              <GraphCanvas graph={graph} exercises={exerciseById} selection={selection} onSelect={setSelection} onMove={choreography.moveState} onOpen={openInEditor} />
+              <GraphCanvas
+                graph={graph}
+                exercises={exerciseById}
+                selection={selection}
+                onSelect={setSelection}
+                onMove={choreography.moveState}
+                onOpen={openInEditor}
+                run={run}
+                onSignal={control.signal}
+                onGoto={control.goto}
+              />
             </Card>
-            <GraphInspector
-              graph={graph}
-              selection={selection}
-              exercises={exerciseById}
-              onRename={choreography.renameState}
-              onRenameTransition={choreography.renameTransition}
-              onOpen={openInEditor}
-              onSetInitial={choreography.setInitialState}
-              onRemove={(stateId) => setToRemove(graph.states.find((s) => s.state_id === stateId) ?? null)}
-            />
+            {run ? (
+              <RunPanel graph={graph} run={run} sending={control.sending} onSignal={control.signal} onStop={control.stop} />
+            ) : (
+              <GraphInspector
+                graph={graph}
+                selection={selection}
+                exercises={exerciseById}
+                onRename={choreography.renameState}
+                onRenameTransition={choreography.renameTransition}
+                onOpen={openInEditor}
+                onSetInitial={choreography.setInitialState}
+                onRemove={(stateId) => setToRemove(graph.states.find((s) => s.state_id === stateId) ?? null)}
+              />
+            )}
           </div>
         </div>
       )}

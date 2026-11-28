@@ -1,9 +1,11 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Loader2 } from "lucide-react";
 import { EXERCISE_SOURCES } from "@/components/exercise/exerciseSources";
 import type { ExerciseSource } from "@/lib/exercises";
 import { cn } from "@/lib/utils";
 
-type StateNodeData = { label: string; initial: boolean; source?: ExerciseSource };
+// run set only on current state of running choreography
+type StateNodeData = { label: string; initial: boolean; source?: ExerciseSource; run?: "performing" | "waiting" };
 export type StateFlowNode = Node<StateNodeData, "state">;
 
 // State label with type icon, details in side panel
@@ -14,7 +16,9 @@ export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
       className={cn(
         "relative w-44 rounded-base border px-3 py-2.5 shadow-sm",
         // tints mixed with card color so canvas dots don't show through
-        selected
+        data.run
+          ? "border-success bg-[color-mix(in_oklab,var(--success)_12%,var(--card))]"
+          : selected
           ? "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]"
           : data.initial ? "border-foreground bg-[color-mix(in_oklab,var(--foreground)_6%,var(--card))]" : "bg-card",
       )}
@@ -29,6 +33,7 @@ export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
       <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {source && <source.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={source.label} />}
         <span className="truncate">{data.label}</span>
+        {data.run === "performing" && <Loader2 className="ml-auto h-3.5 w-3.5 shrink-0 animate-spin text-success" aria-label="Vykonáva sa" />}
       </p>
       {/* edges compute their own ends, handles only anchor them */}
       {/* NOTE (SCRUM-96): to draw transitions make these handles connectable, set nodesConnectable and onConnect in GraphCanvas, add addTransition to useChoreography
