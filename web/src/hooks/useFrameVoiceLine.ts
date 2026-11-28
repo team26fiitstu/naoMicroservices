@@ -12,7 +12,7 @@ import {
   type VoiceLinesConfig,
 } from "@/lib/voiceLines";
 
-export type Dictation = "idle" | "recording" | "transcribing";
+type Dictation = "idle" | "recording" | "transcribing";
 
 // What NAO says on frame, saved on blur, after dictation and on voice change
 export function useFrameVoiceLine(

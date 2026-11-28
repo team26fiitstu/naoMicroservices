@@ -22,6 +22,11 @@ export default defineConfig([
     rules: {
       // shadcn/ui components also export cva variants
       'react-refresh/only-export-components': ['error', { allowExportNames: ['buttonVariants', 'badgeVariants'] }],
+      // one radius from theme, sizes would drift apart again
+      'no-restricted-syntax': ['error', ...['Literal[value', 'TemplateElement[value.raw'].map((node) => ({
+        selector: `${node}=/(^|\\s|:)rounded(-(sm|md|lg|xl|2xl|3xl))?(\\s|$)/]`,
+        message: 'Use rounded-base, or rounded-full for circles.',
+      }))],
     },
   },
 ])

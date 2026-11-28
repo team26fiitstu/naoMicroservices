@@ -126,7 +126,8 @@ def exercise_exists(exercise_id: str) -> bool:
 
 
 def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
-                    media_bytes: bytes = None, media_ext: str = ".mp4", video_range: dict = None) -> dict:
+                    media_bytes: bytes = None, media_ext: str = ".mp4", video_range: dict = None,
+                    source: str = None) -> dict:
     """
     Create a new exercise on disk.
 
@@ -138,6 +139,7 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
         media_bytes: Raw bytes of the original uploaded file, or None.
         media_ext:   File extension for the media file, e.g. ".mp4" or ".jpg".
         video_range: Selected {"start": seconds, "end": seconds or None} of the original video, or None.
+        source:      What the exercise was built from, one of SOURCES, or None for exercises from poses.
 
     Returns:
         The config dict of the newly created exercise.
@@ -174,6 +176,8 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
     }
     if video_range is not None:
         config["video_range"] = video_range
+    if source is not None:
+        config["source"] = source
     _write_json(config_path(exercise_id), config)
 
     return config
@@ -184,10 +188,25 @@ def get_exercise(exercise_id: str) -> dict:
     return _read_json(config_path(exercise_id))
 
 
+SOURCES = ("video", "image", "poses")
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def exercise_source(cfg: dict) -> str:
+    """Stored source, guessed from original media only for exercises created before it was stored."""
+    if cfg.get("source") in SOURCES:
+        return cfg["source"]
+    directory = media_dir(cfg["id"])
+    originals = [name for name in os.listdir(directory) if name.startswith("original")] if os.path.isdir(directory) else []
+    if not originals:
+        return "poses"
+    return "image" if os.path.splitext(originals[0])[1].lower() in IMAGE_EXTENSIONS else "video"
+
+
 def list_exercises() -> list:
     """
     Return a summary list of all exercises.
-    Each entry: {id, name, frame_count, created_at, pose_engine, repetitions}
+    Each entry: {id, name, frame_count, created_at, pose_engine, repetitions, calories, description, source}
     """
     if not os.path.isdir(EXERCISES_DIR):
         return []
@@ -210,6 +229,7 @@ def list_exercises() -> list:
                 "repetitions": cfg.get("repetitions", 1),
                 "calories": cfg.get("calories"),
                 "description": cfg.get("description"),
+                "source": exercise_source(cfg),
             })
         except (json.JSONDecodeError, KeyError):
             continue

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { MetaItem, MetaRow } from "@/components/ui/meta";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
 import { ConfirmDialog } from "@/components/ui/confirmDialog";
 import { EmptyState } from "@/components/ui/emptyState";
@@ -14,38 +15,23 @@ import { useStatus } from "@/hooks/useStatus";
 import { pluralSk } from "@/lib/plural";
 import { api, ApiError } from "@/lib/api";
 import { failureText } from "@/lib/errors";
-import { runExercise, updateExercise } from "@/lib/exercises";
+import { formatDateTime } from "@/lib/date";
+import { listExercises, runExercise, updateExercise, type ExerciseSummary } from "@/lib/exercises";
 import { Loader2, Play, Trash2, Film, CalendarDays, Flame, FolderOpen, Upload } from "lucide-react";
 
-// created_at is UTC without timezone suffix
-const formatCreatedAt = (value: string) =>
-  new Date(/Z|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`).toLocaleString("sk-SK", {
-    day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
-
-type Exercise = {
-  id: string;
-  name: string;
-  frame_count: number;
-  created_at: string;
-  repetitions: number;
-  calories?: number | null;
-  description?: string | null;
-};
-
 export default function ExercisesPage() {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseSummary[]>([]);
   const [loading, setLoading]     = useState(true);
   const { status, show: showStatus } = useStatus();
   const [running, setRunning]     = useState<string | null>(null);
   const [deleting, setDeleting]   = useState<string | null>(null);
-  const [toDelete, setToDelete]   = useState<Exercise | null>(null);
+  const [toDelete, setToDelete]   = useState<ExerciseSummary | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setExercises(await api<Exercise[]>("/exercise/list"));
+      setExercises(await listExercises());
     } catch (err) {
       showStatus("error", failureText("Načítanie cvičení zlyhalo", err));
     } finally {
@@ -123,23 +109,16 @@ export default function ExercisesPage() {
           <div className="min-w-0 flex-1 space-y-1.5">
             <ExerciseNameInput name={ex.name} onRename={(name) => renameExercise(ex.id, name)} className="w-full max-w-sm" />
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <Film className="h-3.5 w-3.5" />
-                {ex.frame_count} {pluralSk(ex.frame_count, "snímka", "snímky", "snímok")}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                {formatCreatedAt(ex.created_at)}
-              </span>
+            <MetaRow>
+              <MetaItem icon={Film}>{ex.frame_count} {pluralSk(ex.frame_count, "snímka", "snímky", "snímok")}</MetaItem>
+              <MetaItem icon={CalendarDays}>{formatDateTime(ex.created_at)}</MetaItem>
               {ex.calories != null && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Flame className="h-3.5 w-3.5" />
+                <MetaItem icon={Flame}>
                   {ex.calories} kcal
                   <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">Odhad AI</Badge>
-                </span>
+                </MetaItem>
               )}
-            </div>
+            </MetaRow>
 
             {ex.description && (
               <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{ex.description}</p>

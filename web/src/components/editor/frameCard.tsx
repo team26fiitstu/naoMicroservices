@@ -62,7 +62,7 @@ export function FrameCard({
       draggable
       {...dragProps}
       className={[
-        "w-full md:w-60 md:shrink-0 rounded-xl border bg-card text-card-foreground shadow-sm",
+        "w-full md:w-60 md:shrink-0 rounded-base border bg-card text-card-foreground shadow-sm",
         "transition-all duration-150 cursor-grab active:cursor-grabbing",
         deleting ? "opacity-40 pointer-events-none" : "",
       ].join(" ")}

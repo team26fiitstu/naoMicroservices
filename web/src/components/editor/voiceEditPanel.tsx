@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { NativeSelect } from "@/components/ui/native-select";
+import { Select } from "@/components/ui/select";
 import { AiBadge } from "@/components/voice/aiBadge";
 import { MicButton } from "@/components/voice/micButton";
 import { TranscriptBlock } from "@/components/voice/transcriptBlock";
@@ -92,12 +92,14 @@ export function VoiceEditPanel({ poses, frameCount, onInsert, onClose }: Props) 
                 <p className="text-sm text-foreground">
                   Snímka <strong>{parsed.frame}</strong>, {parsed.side === "before" ? "pred" : "za"}. Vyberte pózu:
                 </p>
-                <NativeSelect className="max-w-xs" value={pickedPose} onChange={(e) => setPickedPose(e.target.value)}>
-                  <option value="" disabled>Póza…</option>
-                  {poses.map((p) => (
-                    <option key={p.name} value={p.name}>{poseLabel(p.name)}</option>
-                  ))}
-                </NativeSelect>
+                <Select
+                  className="max-w-xs"
+                  label="Póza"
+                  placeholder="Póza…"
+                  value={pickedPose}
+                  onValueChange={setPickedPose}
+                  options={poses.map((p) => ({ value: p.name, label: poseLabel(p.name) }))}
+                />
               </div>
             ) : null
           }

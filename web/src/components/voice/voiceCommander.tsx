@@ -151,7 +151,7 @@ export function VoiceCommander() {
               <div
                 key={item.id}
                 className={[
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-200 border",
+                  "flex items-center gap-3 rounded-base px-3 py-2 text-sm transition-colors duration-200 border",
                   item.status === "running" ? "bg-primary/10 border-primary/20" : "",
                   item.status === "done"    ? "bg-success/10 border-success/20" : "",
                   item.status === "error"   ? "bg-destructive/10 border-destructive/20" : "",

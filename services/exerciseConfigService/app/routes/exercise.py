@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, send_file
 import io
 
 from app.storage import (
+    SOURCES,
     exercise_exists,
     create_exercise,
     get_exercise,
@@ -60,6 +61,7 @@ def validate_video_range(value):
 #      frames      — JSON string
 #      pose_engine — string (optional)
 #      video_range — JSON string (optional)
+#      source      — "video", "image" or "poses" (optional)
 #      media       — file (optional)
 # ---------------------------------------------------------------------------
 @exercise_bp.route("/create", methods=["POST"])
@@ -69,6 +71,7 @@ def create():
         frames_raw = request.form.get("frames")
         pose_engine = request.form.get("pose_engine", "mediapipe")
         video_range_raw = request.form.get("video_range")
+        source = request.form.get("source")
 
         if not name:
             return jsonify({"error": "'name' is required"}), 400
@@ -99,6 +102,7 @@ def create():
         frames = data.get("frames")
         pose_engine = data.get("pose_engine", "mediapipe")
         video_range = data.get("video_range")
+        source = data.get("source")
         media_bytes = None
         media_ext = ".bin"
 
@@ -110,6 +114,8 @@ def create():
         video_range = validate_video_range(video_range)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    if source is not None and source not in SOURCES:
+        return jsonify({"error": f"'source' must be one of {', '.join(SOURCES)}"}), 400
 
     config = create_exercise(
         name=name,
@@ -118,6 +124,7 @@ def create():
         media_bytes=media_bytes,
         media_ext=media_ext,
         video_range=video_range,
+        source=source,
     )
     return jsonify(config), 201
 

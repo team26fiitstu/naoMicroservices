@@ -94,11 +94,11 @@ export function VideoTrimmer({ src, onChange }: Props) {
         onTimeUpdate={onTimeUpdate}
         onPlay={onPlay}
         onError={markUnavailable}
-        className={unavailable ? "hidden" : "w-full max-h-80 object-contain bg-black rounded-lg"}
+        className={unavailable ? "hidden" : "w-full max-h-80 object-contain bg-black rounded-base"}
       />
 
       {unavailable && (
-        <p className="rounded-lg bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-base bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
           Video sa nedá prehrať v prehliadači, spracuje sa celé.
         </p>
       )}
