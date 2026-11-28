@@ -24,6 +24,7 @@ Directory layout on disk (EXERCISES_DIR = /service/exercises in container):
 
 config.json structure:
   {
+    "schema_version": 1,
     "id": "a3f9c1d2",
     "name": "Arm Wave",
     "created_at": "2026-03-16T12:00:00",
@@ -60,8 +61,15 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 
+from jsonschema import Draft202012Validator, ValidationError
+
 # Read from environment — set in docker-compose
 EXERCISES_DIR = os.environ.get("EXERCISES_DIR", "/service/exercises")
+SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schemas", "exercise-config.schema.json")
+with open(SCHEMA_PATH, "r", encoding="utf-8") as schema_file:
+    EXERCISE_CONFIG_SCHEMA = json.load(schema_file)
+Draft202012Validator.check_schema(EXERCISE_CONFIG_SCHEMA)
+EXERCISE_CONFIG_VALIDATOR = Draft202012Validator(EXERCISE_CONFIG_SCHEMA)
 
 
 # =============================================================================
@@ -117,6 +125,24 @@ def _write_json(path: str, data) -> None:
         json.dump(data, f, indent=2)
 
 
+def _read_exercise_config(path: str) -> dict:
+    """Read and validate an exercise config; unversioned files are legacy v1."""
+    config = _read_json(path)
+    if isinstance(config, dict):
+        config.setdefault("schema_version", 1)
+    EXERCISE_CONFIG_VALIDATOR.validate(config)
+    return config
+
+
+def _write_exercise_config(path: str, config: dict) -> dict:
+    """Validate and write a versioned exercise config."""
+    config = dict(config)
+    config.setdefault("schema_version", 1)
+    EXERCISE_CONFIG_VALIDATOR.validate(config)
+    _write_json(path, config)
+    return config
+
+
 # =============================================================================
 # Exercise operations
 # =============================================================================
@@ -144,6 +170,19 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
     """
     exercise_id = uuid.uuid4().hex[:8]
 
+    config = {
+        "schema_version": 1,
+        "id": exercise_id,
+        "name": name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "pose_engine": pose_engine,
+        "repetitions": 1,
+        "frame_sequence": list(range(len(frames))),
+    }
+    if video_range is not None:
+        config["video_range"] = video_range
+    EXERCISE_CONFIG_VALIDATOR.validate(config)
+
     os.makedirs(frames_dir(exercise_id), exist_ok=True)
     os.makedirs(media_dir(exercise_id), exist_ok=True)
 
@@ -163,25 +202,15 @@ def create_exercise(name: str, frames: list, pose_engine: str = "mediapipe",
         with open(media_file, "wb") as f:
             f.write(media_bytes)
 
-    # Build and save config
-    config = {
-        "id": exercise_id,
-        "name": name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "pose_engine": pose_engine,
-        "repetitions": 1,
-        "frame_sequence": list(range(len(frames))),
-    }
-    if video_range is not None:
-        config["video_range"] = video_range
-    _write_json(config_path(exercise_id), config)
+    # Save validated config after its frame files exist.
+    config = _write_exercise_config(config_path(exercise_id), config)
 
     return config
 
 
 def get_exercise(exercise_id: str) -> dict:
     """Return the config dict for an exercise. Raises FileNotFoundError if missing."""
-    return _read_json(config_path(exercise_id))
+    return _read_exercise_config(config_path(exercise_id))
 
 
 def list_exercises() -> list:
@@ -200,7 +229,7 @@ def list_exercises() -> list:
         if not os.path.isfile(cfg_path):
             continue
         try:
-            cfg = _read_json(cfg_path)
+            cfg = _read_exercise_config(cfg_path)
             result.append({
                 "id": cfg["id"],
                 "name": cfg.get("name", ""),
@@ -211,7 +240,7 @@ def list_exercises() -> list:
                 "calories": cfg.get("calories"),
                 "description": cfg.get("description"),
             })
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError, ValidationError):
             continue
 
     result.sort(key=lambda x: x["created_at"], reverse=True)
@@ -234,7 +263,7 @@ def update_config(exercise_id: str, name: str = None, repetitions: int = None,
     if not exercise_exists(exercise_id):
         raise FileNotFoundError(f"Exercise '{exercise_id}' not found")
 
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     if name is not None:
         cfg["name"] = name
     if repetitions is not None:
@@ -243,7 +272,7 @@ def update_config(exercise_id: str, name: str = None, repetitions: int = None,
         cfg["calories"] = calories
     if description is not None:
         cfg["description"] = description
-    _write_json(config_path(exercise_id), cfg)
+    cfg = _write_exercise_config(config_path(exercise_id), cfg)
     return cfg
 
 
@@ -265,9 +294,9 @@ def update_sequence(exercise_id: str, frame_sequence: list) -> dict:
         if not os.path.isfile(frame_path(exercise_id, idx)):
             raise ValueError(f"Frame index {idx} does not exist for exercise '{exercise_id}'")
 
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     cfg["frame_sequence"] = frame_sequence
-    _write_json(config_path(exercise_id), cfg)
+    cfg = _write_exercise_config(config_path(exercise_id), cfg)
     return cfg
 
 
@@ -279,7 +308,7 @@ def get_frames(exercise_id: str) -> list:
     if not exercise_exists(exercise_id):
         raise FileNotFoundError(f"Exercise '{exercise_id}' not found")
 
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     sequence = cfg.get("frame_sequence", [])
 
     frames = []
@@ -352,12 +381,12 @@ def insert_frame(exercise_id: str, position: int, keypoints: dict, nao_angles: l
     }
     _write_json(frame_path(exercise_id, new_index), frame)
 
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     seq = cfg.get("frame_sequence", [])
     position = max(0, min(position, len(seq)))
     seq.insert(position, new_index)
     cfg["frame_sequence"] = seq
-    _write_json(config_path(exercise_id), cfg)
+    cfg = _write_exercise_config(config_path(exercise_id), cfg)
 
     return frame
 
@@ -388,9 +417,9 @@ def add_frame(exercise_id: str, keypoints: dict, nao_angles: list) -> dict:
     _write_json(frame_path(exercise_id, new_index), frame)
 
     # Append to sequence
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     cfg["frame_sequence"].append(new_index)
-    _write_json(config_path(exercise_id), cfg)
+    cfg = _write_exercise_config(config_path(exercise_id), cfg)
 
     return frame
 
@@ -413,7 +442,7 @@ def delete_frame(exercise_id: str, frame_index: int) -> dict:
     if os.path.isfile(img_path):
         os.remove(img_path)
 
-    cfg = _read_json(config_path(exercise_id))
+    cfg = _read_exercise_config(config_path(exercise_id))
     cfg["frame_sequence"] = [i for i in cfg["frame_sequence"] if i != frame_index]
-    _write_json(config_path(exercise_id), cfg)
+    cfg = _write_exercise_config(config_path(exercise_id), cfg)
     return cfg

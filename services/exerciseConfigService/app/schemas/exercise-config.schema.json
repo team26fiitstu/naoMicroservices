@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://naomi.local/schemas/exercise-config.schema.json",
+  "title": "NAOMI exercise config",
+  "description": "Playback metadata for an exercise and its frame files.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "created_at",
+    "pose_engine",
+    "repetitions",
+    "frame_sequence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Exercise config file format version."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pose_engine": {
+      "type": "string",
+      "enum": ["mediapipe", "yolo"]
+    },
+    "repetitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "frame_sequence": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "Frame IDs in playback order; repeated IDs are allowed."
+    },
+    "video_range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": ["number", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "calories": {
+      "type": "number"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "additionalProperties": true
+}

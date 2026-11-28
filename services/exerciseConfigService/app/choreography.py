@@ -1,9 +1,9 @@
 """
 choreography.py — storage and validation for choreographies (graphs of states)
 
-A choreography references existing exercises ("states") by their hash and
-connects them with transitions. It is stored as its own JSON file, separate
-from any single exercise, inside EXERCISES_DIR:
+A choreography has graph states that explicitly reference existing exercises
+and connects them with transitions. It is stored as its own JSON file,
+separate from any single exercise, inside EXERCISES_DIR:
 
   /service/exercises/
   ├── a3f9c1d2/                  ← exercise (state), unaffected
@@ -21,7 +21,8 @@ Choreography document:
     "name": "Trening 1",
     "initial_state": "da48eac8",
     "states": [
-      {"state_id": "da48eac8", "label": "Pohyb 1", "x": 120, "y": 80}
+      {"state_id": "da48eac8", "exercise_id": "da48eac8",
+       "label": "Pohyb 1", "x": 120, "y": 80}
     ],
     "transitions": [
       {"id": "t1", "from": "da48eac8", "to": "a3f9c1d2", "label": "Pohyb 1 hotovy"}
@@ -39,19 +40,34 @@ import uuid
 import tempfile
 from datetime import datetime, timezone
 
+from jsonschema import Draft202012Validator
+
 from app import storage
 
 CHOREOGRAPHIES_DIRNAME = "_choreographies"
 
-# Exercise ids and choreography ids are both uuid4().hex[:8]: 8 lowercase hex
-# characters. Validating the format (rather than only checking existence on
-# disk) also blocks path-traversal values such as "../outside" from ever
-# reaching os.path.join()-based lookups.
-_HASH_RE = re.compile(r"^[0-9a-f]{8}$")
+# Exercise IDs and choreography IDs are both eight lowercase hexadecimal
+# characters. Validate the ID before using it in a filesystem path.
+_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+
+SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schemas", "choreography.schema.json")
+with open(SCHEMA_PATH, "r", encoding="utf-8") as schema_file:
+    CHOREOGRAPHY_SCHEMA = json.load(schema_file)
+Draft202012Validator.check_schema(CHOREOGRAPHY_SCHEMA)
+CHOREOGRAPHY_VALIDATOR = Draft202012Validator(CHOREOGRAPHY_SCHEMA)
+CHOREOGRAPHY_INPUT_SCHEMA = {
+    **CHOREOGRAPHY_SCHEMA,
+    "required": [
+        field for field in CHOREOGRAPHY_SCHEMA["required"]
+        if field not in {"id", "created_at", "updated_at"}
+    ],
+}
+CHOREOGRAPHY_INPUT_VALIDATOR = Draft202012Validator(CHOREOGRAPHY_INPUT_SCHEMA)
 
 
-def is_valid_hash(value) -> bool:
-    return isinstance(value, str) and bool(_HASH_RE.match(value))
+def is_valid_id(value) -> bool:
+    """Return whether value has the format used by exercise and graph IDs."""
+    return isinstance(value, str) and bool(_ID_RE.fullmatch(value))
 
 
 # =============================================================================
@@ -64,10 +80,6 @@ def choreographies_dir() -> str:
 
 def choreography_path(choreography_id: str) -> str:
     return os.path.join(choreographies_dir(), f"{choreography_id}.json")
-
-
-def is_valid_id(choreography_id) -> bool:
-    return is_valid_hash(choreography_id)
 
 
 def choreography_exists(choreography_id: str) -> bool:
@@ -144,89 +156,64 @@ def _is_finite_number(value) -> bool:
     return math.isfinite(value)
 
 
+def _schema_errors(doc, validator=CHOREOGRAPHY_VALIDATOR) -> list:
+    errors = validator.iter_errors(doc)
+    return [
+        f"{'.'.join(str(part) for part in error.absolute_path) or 'document'}: {error.message}"
+        for error in sorted(errors, key=lambda item: tuple(str(part) for part in item.absolute_path))
+    ]
+
+
 def validate_choreography(doc) -> list:
     """
-    Validate a choreography document.
-    Returns a list of human-readable error strings; empty list means valid.
+    Validate the graph body and its exercise references.
+    Returns human-readable errors; empty list means valid.
     """
-    errors = []
-
     if not isinstance(doc, dict):
         return ["document must be a JSON object"]
 
-    name = doc.get("name")
-    if not isinstance(name, str) or not name.strip():
-        errors.append("'name' is required and must be a non-empty string")
+    graph = _sanitize_doc(doc)
+    graph["schema_version"] = doc.get("schema_version", 1)
+    errors = _schema_errors(graph, CHOREOGRAPHY_INPUT_VALIDATOR)
+    if errors:
+        return errors
+    if not graph["name"].strip():
+        errors.append("name must not be blank")
 
-    schema_version = doc.get("schema_version", 1)
-    if schema_version != 1:
-        errors.append("'schema_version' must be 1")
-
-    states = doc.get("states")
+    states = graph["states"]
     state_ids = set()
-    if not isinstance(states, list) or len(states) == 0:
-        errors.append("'states' must be a non-empty list")
-        states = []
+    for state in states:
+        state_id = state["state_id"]
+        exercise_id = state["exercise_id"]
+        if state_id in state_ids:
+            errors.append(f"duplicate state ID '{state_id}'")
+        state_ids.add(state_id)
+        if exercise_id != state_id:
+            errors.append(
+                f"state '{state_id}' exercise_id must match state_id for playback compatibility"
+            )
+        if not storage.exercise_exists(exercise_id):
+            errors.append(f"exercise ID '{exercise_id}' does not reference an existing exercise")
+        if not _is_finite_number(state["x"]):
+            errors.append(f"state '{state_id}' x must be a finite number")
+        if not _is_finite_number(state["y"]):
+            errors.append(f"state '{state_id}' y must be a finite number")
 
-    for index, state in enumerate(states):
-        if not isinstance(state, dict):
-            errors.append(f"states[{index}] must be an object")
-            continue
-        state_id = state.get("state_id")
-        label = state.get("label")
-        x = state.get("x")
-        y = state.get("y")
-
-        if not is_valid_hash(state_id):
-            errors.append(f"states[{index}].state_id is required and must be an 8-character hex exercise id")
-        else:
-            if state_id in state_ids:
-                errors.append(f"duplicate state_id '{state_id}'")
-            state_ids.add(state_id)
-            if not storage.exercise_exists(state_id):
-                errors.append(f"state_id '{state_id}' does not reference an existing exercise")
-
-        if not isinstance(label, str) or not label:
-            errors.append(f"states[{index}].label is required and must be a string")
-        if not _is_finite_number(x):
-            errors.append(f"states[{index}].x must be a finite number")
-        if not _is_finite_number(y):
-            errors.append(f"states[{index}].y must be a finite number")
-
-    initial_state = doc.get("initial_state")
-    if not isinstance(initial_state, str) or not initial_state:
-        errors.append("'initial_state' is required")
-    elif initial_state not in state_ids:
-        errors.append(f"'initial_state' ('{initial_state}') must be one of the choreography's states")
-
-    transitions = doc.get("transitions", [])
-    if not isinstance(transitions, list):
-        errors.append("'transitions' must be a list")
-        transitions = []
+    initial_state = graph["initial_state"]
+    if initial_state not in state_ids:
+        errors.append(f"initial_state '{initial_state}' must be one of the graph's state IDs")
 
     transition_ids = set()
-    for index, transition in enumerate(transitions):
-        if not isinstance(transition, dict):
-            errors.append(f"transitions[{index}] must be an object")
-            continue
-        t_id = transition.get("id")
-        t_from = transition.get("from")
-        t_to = transition.get("to")
-        t_label = transition.get("label")
+    for transition in graph["transitions"]:
+        transition_id = transition["id"]
+        if transition_id in transition_ids:
+            errors.append(f"duplicate transition ID '{transition_id}'")
+        transition_ids.add(transition_id)
 
-        if not isinstance(t_id, str) or not t_id:
-            errors.append(f"transitions[{index}].id is required and must be a string")
-        else:
-            if t_id in transition_ids:
-                errors.append(f"duplicate transition id '{t_id}'")
-            transition_ids.add(t_id)
-
-        if not isinstance(t_from, str) or t_from not in state_ids:
-            errors.append(f"transitions[{index}].from ('{t_from}') must reference a state of this choreography")
-        if not isinstance(t_to, str) or t_to not in state_ids:
-            errors.append(f"transitions[{index}].to ('{t_to}') must reference a state of this choreography")
-        if not isinstance(t_label, str) or not t_label:
-            errors.append(f"transitions[{index}].label is required and must be a string")
+        if transition["from"] not in state_ids:
+            errors.append(f"transition '{transition_id}' from must reference a state ID in this graph")
+        if transition["to"] not in state_ids:
+            errors.append(f"transition '{transition_id}' to must reference a state ID in this graph")
 
     return errors
 
@@ -236,11 +223,12 @@ def validate_choreography(doc) -> list:
 # =============================================================================
 
 def _sanitize_state(state) -> dict:
-    """Keep only state_id, label, x, y from a single state entry."""
+    """Keep defined state fields and default legacy exercise references."""
     if not isinstance(state, dict):
         return state
     return {
         "state_id": state.get("state_id"),
+        "exercise_id": state.get("exercise_id", state.get("state_id")),
         "label": state.get("label"),
         "x": state.get("x"),
         "y": state.get("y"),
@@ -270,6 +258,7 @@ def _sanitize_doc(doc: dict) -> dict:
     states = doc.get("states")
     transitions = doc.get("transitions", [])
     return {
+        "schema_version": doc.get("schema_version", 1),
         "name": doc.get("name"),
         "initial_state": doc.get("initial_state"),
         "states": [_sanitize_state(s) for s in states] if isinstance(states, list) else states,
@@ -288,6 +277,10 @@ def create_choreography(doc: dict) -> dict:
     stored["created_at"] = now
     stored["updated_at"] = now
 
+    schema_errors = _schema_errors(stored)
+    if schema_errors:
+        raise ValueError("invalid choreography: " + "; ".join(schema_errors))
+
     _write_json_atomic(choreography_path(choreography_id), stored)
     return stored
 
@@ -295,7 +288,16 @@ def create_choreography(doc: dict) -> dict:
 def get_choreography(choreography_id: str) -> dict:
     if not choreography_exists(choreography_id):
         raise FileNotFoundError(f"Choreography '{choreography_id}' not found")
-    return _read_json(choreography_path(choreography_id))
+    # Older graph files used state_id for both the state and exercise ID.
+    # Add the explicit field to responses without rewriting stored files.
+    doc = _read_json(choreography_path(choreography_id))
+    if isinstance(doc, dict) and isinstance(doc.get("states"), list):
+        doc["states"] = [
+            {**state, "exercise_id": state.get("exercise_id", state.get("state_id"))}
+            if isinstance(state, dict) else state
+            for state in doc["states"]
+        ]
+    return doc
 
 
 def replace_choreography(choreography_id: str, doc: dict) -> dict:
@@ -310,6 +312,10 @@ def replace_choreography(choreography_id: str, doc: dict) -> dict:
     stored["id"] = choreography_id
     stored["created_at"] = existing.get("created_at", _utcnow_isoformat())
     stored["updated_at"] = _utcnow_isoformat()
+
+    schema_errors = _schema_errors(stored)
+    if schema_errors:
+        raise ValueError("invalid choreography: " + "; ".join(schema_errors))
 
     _write_json_atomic(choreography_path(choreography_id), stored)
     return stored
@@ -340,15 +346,15 @@ def list_choreographies() -> list:
 
 
 def choreographies_using(exercise_id: str) -> list:
-    """Return [{id, name}] for every choreography that references exercise_id as a state."""
+    """Return [{id, name}] for each choreography referencing exercise_id."""
     result = []
     for entry, doc in _iter_choreography_documents():
-        state_ids = {
-            state.get("state_id")
+        exercise_ids = {
+            state.get("exercise_id", state.get("state_id"))
             for state in doc.get("states", [])
             if isinstance(state, dict)
         }
-        if exercise_id in state_ids:
+        if exercise_id in exercise_ids:
             result.append({"id": doc.get("id", entry.name[:-5]), "name": doc.get("name", "")})
 
     return result

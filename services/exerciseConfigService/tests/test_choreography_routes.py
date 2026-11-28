@@ -105,7 +105,7 @@ class ChoreographyRoutes(OfflineCase):
         base_doc = self.make_doc(state_a, state_b)
 
         invalid_docs = {
-            "unknown exercise hash": {**base_doc, "states": [
+            "unknown exercise ID": {**base_doc, "states": [
                 {"state_id": "deadbeef", "label": "Ghost", "x": 0, "y": 0},
                 base_doc["states"][1],
             ]},
