@@ -4,16 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExerciseSelect } from "@/components/exercise/exerciseSelect";
 import { MediaUpload } from "@/components/exercise/mediaUpload";
-import { createExerciseFromImage, createExerciseFromVideo, DEFAULT_VIDEO_SETTINGS, nameFromFile, type ExerciseSummary } from "@/lib/exercises";
+import { createExerciseFromImage, createExerciseFromVideo, DEFAULT_VIDEO_SETTINGS, nameFromFile, type ExerciseRef, type ExerciseSummary } from "@/lib/exercises";
 import type { VideoRange } from "@/lib/videoRange";
 
-type Exercise = Pick<ExerciseSummary, "id" | "name">;
-
 type Props = {
-  // saved exercises not in graph yet
+  // all saved exercises, same one may be added several times
   exercises: ExerciseSummary[];
-  onAddExisting: (exercise: Exercise) => void;
-  onAddNew: (exercise: Exercise) => void;
+  onAddExisting: (exercise: ExerciseRef) => void;
+  onAddNew: (exercise: ExerciseRef) => void;
   onError: (action: string, err: unknown) => void;
   onReject: () => void;
   onClose: () => void;
@@ -67,7 +65,7 @@ export function AddStatePanel({ exercises, onAddExisting, onAddNew, onError, onR
             value={exerciseId}
             onValueChange={setExerciseId}
             placeholder="Vyberte cvičenie…"
-            emptyText="Všetky cvičenia sú v grafe"
+            emptyText="Zatiaľ žiadne cvičenia"
           />
           <Button size="sm" onClick={addExisting} disabled={!exerciseId}>
             <Plus className="h-3.5 w-3.5" />

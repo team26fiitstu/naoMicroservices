@@ -36,7 +36,11 @@ function ChoreographyView({ id }: { id: string }) {
   const [toRemove, setToRemove] = useState<ChoreographyState | null>(null);
 
   const exerciseById = useMemo(() => new Map(exercises.map((e) => [e.id, e])), [exercises]);
-  const openInEditor = (stateId: string) => navigate(`/edit?id=${stateId}`);
+  // state opened as its exercise
+  const openInEditor = (stateId: string) => {
+    const state = graph?.states.find((s) => s.id === stateId);
+    if (state) navigate(`/edit?id=${state.exercise_id}`);
+  };
 
   return (
     <Page
@@ -71,7 +75,7 @@ function ChoreographyView({ id }: { id: string }) {
 
       {adding && graph && !run && (
         <AddStatePanel
-          exercises={exercises.filter((e) => !graph.states.some((s) => s.state_id === e.id))}
+          exercises={exercises}
           onAddExisting={choreography.addState}
           onAddNew={choreography.addNewExercise}
           onError={(action, err) => showStatus("error", failureText(action, err))}
@@ -126,7 +130,9 @@ function ChoreographyView({ id }: { id: string }) {
                 onRenameTransition={choreography.renameTransition}
                 onOpen={openInEditor}
                 onSetInitial={choreography.setInitialState}
-                onRemove={(stateId) => setToRemove(graph.states.find((s) => s.state_id === stateId) ?? null)}
+                onChangeExercise={choreography.changeExercise}
+                onDuplicate={choreography.duplicateState}
+                onRemove={(stateId) => setToRemove(graph.states.find((s) => s.id === stateId) ?? null)}
               />
             )}
           </div>
@@ -141,7 +147,7 @@ function ChoreographyView({ id }: { id: string }) {
         confirmLabel="Odstrániť"
         onConfirm={() => {
           if (!toRemove) return;
-          choreography.removeState(toRemove.state_id);
+          choreography.removeState(toRemove.id);
           setSelection(null);
         }}
       />

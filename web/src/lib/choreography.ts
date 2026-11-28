@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 
-// state is saved exercise placed in graph, x and y only for editor
-export type ChoreographyState = { state_id: string; label: string; x: number; y: number };
+// state is exercise placed in graph, same exercise allowed in several states, x and y only for editor
+export type ChoreographyState = { id: string; exercise_id: string; label: string; x: number; y: number };
 type Transition = { id: string; from: string; to: string; label: string };
 
 export type Choreography = {
@@ -37,7 +37,22 @@ type GraphFields = Pick<Choreography, "name" | "initial_state" | "states" | "tra
 
 // label of state by id, id itself when state is gone
 export const stateLabel = (graph: Choreography, stateId: string) =>
-  graph.states.find((s) => s.state_id === stateId)?.label ?? stateId;
+  graph.states.find((s) => s.id === stateId)?.label ?? stateId;
+
+// label must be unique in graph, number added when taken: "Odpočinok 2"
+function uniqueLabel(states: ChoreographyState[], base: string) {
+  const taken = new Set(states.map((s) => s.label));
+  for (let n = 1; ; n++) {
+    const label = n === 1 ? base : `${base} ${n}`;
+    if (!taken.has(label)) return label;
+  }
+}
+
+// next id after highest sN, label numbered when taken
+export function newState(states: ChoreographyState[], exerciseId: string, label: string): ChoreographyState {
+  const last = Math.max(0, ...states.map((s) => Number(s.id.match(/^s(\d+)$/)?.[1] ?? 0)));
+  return { id: `s${last + 1}`, exercise_id: exerciseId, label: uniqueLabel(states, label), ...nextStatePosition(states) };
+}
 
 export const listChoreographies = () => api<ChoreographySummary[]>("/choreography/list");
 

@@ -13,7 +13,7 @@ import { NameInput } from "@/components/ui/nameInput";
 import { StatusAlert } from "@/components/ui/statusAlert";
 import { ExerciseSelect } from "@/components/exercise/exerciseSelect";
 import { useStatus } from "@/hooks/useStatus";
-import { createChoreography, deleteChoreography, listChoreographies, nextStatePosition, renameChoreography, type ChoreographySummary } from "@/lib/choreography";
+import { createChoreography, deleteChoreography, listChoreographies, newState, renameChoreography, type ChoreographySummary } from "@/lib/choreography";
 import { formatDateTime } from "@/lib/date";
 import { failureText } from "@/lib/errors";
 import { exerciseDisplayName } from "@/lib/exerciseName";
@@ -156,12 +156,8 @@ function CreateForm({ onCancel, onCreated, onError }: CreateFormProps) {
     if (!name.trim() || !exercise) return;
     setSaving(true);
     try {
-      const created = await createChoreography({
-        name: name.trim(),
-        initial_state: exercise.id,
-        states: [{ state_id: exercise.id, label: exerciseDisplayName(exercise.name), ...nextStatePosition([]) }],
-        transitions: [],
-      });
+      const initial = newState([], exercise.id, exerciseDisplayName(exercise.name));
+      const created = await createChoreography({ name: name.trim(), initial_state: initial.id, states: [initial], transitions: [] });
       onCreated(created.id);
     } catch (err) {
       onError("Vytvorenie zlyhalo", err);

@@ -37,17 +37,17 @@ export function GraphCanvas({ graph, exercises, selection, onSelect, onMove, onO
   const [nodes, setNodes, onNodesChange] = useNodesState<StateFlowNode>([]);
   useEffect(() => {
     setNodes(graph.states.map((s) => ({
-      id: s.state_id,
+      id: s.id,
       type: "state",
       position: { x: s.x, y: s.y },
       data: {
         label: s.label,
-        initial: s.state_id === graph.initial_state,
-        source: exercises.get(s.state_id)?.source,
+        initial: s.id === graph.initial_state,
+        source: exercises.get(s.exercise_id)?.source,
         running: !!runState,
-        run: runState === s.state_id ? (runStatus === "performing" ? "performing" : "waiting") : undefined,
+        run: runState === s.id ? (runStatus === "performing" ? "performing" : "waiting") : undefined,
       },
-      selected: !runState && selection?.kind === "state" && selection.id === s.state_id,
+      selected: !runState && selection?.kind === "state" && selection.id === s.id,
     })));
   }, [graph, exercises, selection, runState, runStatus, setNodes]);
 

@@ -1,9 +1,10 @@
 """
 choreography.py — storage and validation for choreographies (graphs of states)
 
-A choreography references existing exercises ("states") by their hash and
-connects them with transitions. It is stored as its own JSON file, separate
-from any single exercise, inside EXERCISES_DIR:
+A choreography is a graph of states connected by transitions. Each state has
+its own id and references an existing exercise by its hash, so the same
+exercise can appear in several states. It is stored as its own JSON file,
+separate from any single exercise, inside EXERCISES_DIR:
 
   /service/exercises/
   ├── a3f9c1d2/                  ← exercise (state), unaffected
@@ -19,12 +20,13 @@ Choreography document:
     "schema_version": 1,
     "id": "c1d2e3f4",
     "name": "Trening 1",
-    "initial_state": "da48eac8",
+    "initial_state": "s1",
     "states": [
-      {"state_id": "da48eac8", "label": "Pohyb 1", "x": 120, "y": 80}
+      {"id": "s1", "exercise_id": "da48eac8", "label": "Rozcvicka", "x": 0, "y": 0},
+      {"id": "s2", "exercise_id": "7c01aa10", "label": "Odpocinok", "x": 240, "y": 0}
     ],
     "transitions": [
-      {"id": "t1", "from": "da48eac8", "to": "a3f9c1d2", "label": "Pohyb 1 hotovy"}
+      {"id": "t1", "from": "s1", "to": "s2", "label": "Cvik hotovy"}
     ],
     "created_at": "...",
     "updated_at": "..."
@@ -52,6 +54,14 @@ _HASH_RE = re.compile(r"^[0-9a-f]{8}$")
 
 def is_valid_hash(value) -> bool:
     return isinstance(value, str) and bool(_HASH_RE.match(value))
+
+
+# state ids chosen by client, like s1, s2, only short safe identifiers
+_STATE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def is_valid_state_id(value) -> bool:
+    return isinstance(value, str) and bool(_STATE_ID_RE.match(value))
 
 
 # =============================================================================
@@ -164,6 +174,7 @@ def validate_choreography(doc) -> list:
 
     states = doc.get("states")
     state_ids = set()
+    labels = set()
     if not isinstance(states, list) or len(states) == 0:
         errors.append("'states' must be a non-empty list")
         states = []
@@ -172,22 +183,31 @@ def validate_choreography(doc) -> list:
         if not isinstance(state, dict):
             errors.append(f"states[{index}] must be an object")
             continue
-        state_id = state.get("state_id")
+        state_id = state.get("id")
+        exercise_id = state.get("exercise_id")
         label = state.get("label")
         x = state.get("x")
         y = state.get("y")
 
-        if not is_valid_hash(state_id):
-            errors.append(f"states[{index}].state_id is required and must be an 8-character hex exercise id")
+        if not is_valid_state_id(state_id):
+            errors.append(f"states[{index}].id is required and must contain only letters, digits, '-' or '_'")
         else:
             if state_id in state_ids:
-                errors.append(f"duplicate state_id '{state_id}'")
+                errors.append(f"duplicate state id '{state_id}'")
             state_ids.add(state_id)
-            if not storage.exercise_exists(state_id):
-                errors.append(f"state_id '{state_id}' does not reference an existing exercise")
 
-        if not isinstance(label, str) or not label:
-            errors.append(f"states[{index}].label is required and must be a string")
+        if not is_valid_hash(exercise_id):
+            errors.append(f"states[{index}].exercise_id is required and must be an 8-character hex exercise id")
+        elif not storage.exercise_exists(exercise_id):
+            errors.append(f"states[{index}].exercise_id '{exercise_id}' does not reference an existing exercise")
+
+        if not isinstance(label, str) or not label.strip():
+            errors.append(f"states[{index}].label is required and must be a non-empty string")
+        else:
+            # surrounding spaces ignored, "Pohyb" and "Pohyb " count as same label
+            if label.strip() in labels:
+                errors.append(f"duplicate state label '{label}'")
+            labels.add(label.strip())
         if not _is_finite_number(x):
             errors.append(f"states[{index}].x must be a finite number")
         if not _is_finite_number(y):
@@ -236,11 +256,12 @@ def validate_choreography(doc) -> list:
 # =============================================================================
 
 def _sanitize_state(state) -> dict:
-    """Keep only state_id, label, x, y from a single state entry."""
+    """Keep only id, exercise_id, label, x, y from a single state entry."""
     if not isinstance(state, dict):
         return state
     return {
-        "state_id": state.get("state_id"),
+        "id": state.get("id"),
+        "exercise_id": state.get("exercise_id"),
         "label": state.get("label"),
         "x": state.get("x"),
         "y": state.get("y"),
@@ -340,15 +361,15 @@ def list_choreographies() -> list:
 
 
 def choreographies_using(exercise_id: str) -> list:
-    """Return [{id, name}] for every choreography that references exercise_id as a state."""
+    """Return [{id, name}] for every choreography with a state of exercise_id."""
     result = []
     for entry, doc in _iter_choreography_documents():
-        state_ids = {
-            state.get("state_id")
+        exercise_ids = {
+            state.get("exercise_id")
             for state in doc.get("states", [])
             if isinstance(state, dict)
         }
-        if exercise_id in state_ids:
+        if exercise_id in exercise_ids:
             result.append({"id": doc.get("id", entry.name[:-5]), "name": doc.get("name", "")})
 
     return result

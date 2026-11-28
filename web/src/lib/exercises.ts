@@ -15,6 +15,9 @@ export type ExerciseSummary = {
   source: ExerciseSource;
 };
 
+// enough of exercise to place it in choreography
+export type ExerciseRef = Pick<ExerciseSummary, "id" | "name">;
+
 // Saved exercise fields changed from editor and exercise list
 type ExerciseUpdate = { name?: string; calories?: number; description?: string };
 

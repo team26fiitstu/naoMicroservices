@@ -1,19 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getChoreography, nextStatePosition, saveChoreography, type Choreography } from "@/lib/choreography";
-import { listExercises, updateExercise, type ExerciseSummary } from "@/lib/exercises";
+import { getChoreography, newState, saveChoreography, type Choreography } from "@/lib/choreography";
 import { exerciseDisplayName } from "@/lib/exerciseName";
+import { listExercises, type ExerciseRef, type ExerciseSummary } from "@/lib/exercises";
 import { failureText } from "@/lib/errors";
 import { useStatus } from "@/hooks/useStatus";
-
-// state label mirrors exercise name, null when all labels already match
-function syncLabels(graph: Choreography, exercises: ExerciseSummary[]): Choreography | null {
-  const names = new Map(exercises.map((e) => [e.id, exerciseDisplayName(e.name)]));
-  const states = graph.states.map((s) => {
-    const name = names.get(s.state_id);
-    return name && name !== s.label ? { ...s, label: name } : s;
-  });
-  return states.some((s, i) => s !== graph.states[i]) ? { ...graph, states } : null;
-}
 
 // choreography graph with its exercises, every change saved as whole graph
 export function useChoreography(id: string) {
@@ -34,13 +24,10 @@ export function useChoreography(id: string) {
     setLoading(true);
     try {
       const [loaded, list] = await Promise.all([getChoreography(id), listExercises()]);
-      // exercise renamed elsewhere, label follows it
-      const synced = syncLabels(loaded, list);
-      latest.current = synced ?? loaded;
-      setGraph(latest.current);
+      latest.current = loaded;
+      setGraph(loaded);
       setExercises(list);
       setFailed(false);
-      if (synced) saveChoreography(synced).catch((err) => showStatus("error", failureText("Uloženie zlyhalo", err)));
     } catch (err) {
       showStatus("error", failureText("Načítanie choreografie zlyhalo", err));
       setFailed(!latest.current);
@@ -68,29 +55,33 @@ export function useChoreography(id: string) {
 
   const rename = (name: string) => update((g) => ({ ...g, name }));
 
-  // renames exercise itself, label in graph follows
-  const renameState = async (stateId: string, name: string) => {
-    try {
-      await updateExercise(stateId, { name });
-    } catch (err) {
-      showStatus("error", failureText("Premenovanie zlyhalo", err));
-      return false;
+  // label unique in graph, exercise itself keeps its name
+  const renameState = (stateId: string, label: string) => {
+    if (latest.current?.states.some((s) => s.id !== stateId && s.label === label)) {
+      showStatus("error", `Stav „${label}“ už v choreografii je.`);
+      return Promise.resolve(false);
     }
-    setExercises((list) => list.map((e) => (e.id === stateId ? { ...e, name } : e)));
-    return update((g) => ({ ...g, states: g.states.map((s) => (s.state_id === stateId ? { ...s, label: name } : s)) }));
+    return update((g) => ({ ...g, states: g.states.map((s) => (s.id === stateId ? { ...s, label } : s)) }));
   };
 
   const moveState = (stateId: string, x: number, y: number) =>
-    update((g) => ({ ...g, states: g.states.map((s) => (s.state_id === stateId ? { ...s, x, y } : s)) }));
+    update((g) => ({ ...g, states: g.states.map((s) => (s.id === stateId ? { ...s, x, y } : s)) }));
 
-  const addState = (exercise: Pick<ExerciseSummary, "id" | "name">) =>
-    update((g) => g.states.some((s) => s.state_id === exercise.id) ? g : {
-      ...g,
-      states: [...g.states, { state_id: exercise.id, label: exerciseDisplayName(exercise.name), ...nextStatePosition(g.states) }],
+  const addState = (exercise: ExerciseRef) =>
+    update((g) => ({ ...g, states: [...g.states, newState(g.states, exercise.id, exerciseDisplayName(exercise.name))] }));
+
+  const changeExercise = (stateId: string, exerciseId: string) =>
+    update((g) => ({ ...g, states: g.states.map((s) => (s.id === stateId ? { ...s, exercise_id: exerciseId } : s)) }));
+
+  // copy with same exercise, label numbered, transitions not copied
+  const duplicateState = (stateId: string) =>
+    update((g) => {
+      const state = g.states.find((s) => s.id === stateId);
+      return state ? { ...g, states: [...g.states, newState(g.states, state.exercise_id, state.label)] } : g;
     });
 
   // exercise created outside graph, list refreshed for its type, state added even if refresh fails
-  const addNewExercise = async (exercise: Pick<ExerciseSummary, "id" | "name">) => {
+  const addNewExercise = async (exercise: ExerciseRef) => {
     try {
       setExercises(await listExercises());
     } catch (err) {
@@ -107,11 +98,11 @@ export function useChoreography(id: string) {
   const removeState = (stateId: string) =>
     update((g) => stateId === g.initial_state ? g : {
       ...g,
-      states: g.states.filter((s) => s.state_id !== stateId),
+      states: g.states.filter((s) => s.id !== stateId),
       transitions: g.transitions.filter((t) => t.from !== stateId && t.to !== stateId),
     });
 
   const setInitialState = (stateId: string) => update((g) => ({ ...g, initial_state: stateId }));
 
-  return { graph, exercises, loading, failed, reload: load, status, showStatus, rename, renameState, renameTransition, moveState, addState, addNewExercise, removeState, setInitialState };
+  return { graph, exercises, loading, failed, reload: load, status, showStatus, rename, renameState, renameTransition, moveState, addState, addNewExercise, removeState, setInitialState, changeExercise, duplicateState };
 }

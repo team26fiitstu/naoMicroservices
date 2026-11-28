@@ -18,15 +18,20 @@ real_release_robot_reservation = translator.release_robot_reservation
 
 CHOREO = "aaaaaaaa"
 OTHER = "bbbbbbbb"
+# exercise ids
 FIRST = "11111111"
 SECOND = "22222222"
+# state ids, differ from exercise ids so mixing them up fails
+FIRST_STATE = "s1"
+SECOND_STATE = "s2"
 
 
 def graph(choreography_id=CHOREO):
-    return {"schema_version": 1, "id": choreography_id, "initial_state": FIRST,
-            "states": [{"state_id": FIRST}, {"state_id": SECOND}],
-            "transitions": [{"id": "go", "from": FIRST, "to": SECOND, "label": "go"},
-                            {"id": "back", "from": SECOND, "to": FIRST, "label": "back"}]}
+    return {"schema_version": 1, "id": choreography_id, "initial_state": FIRST_STATE,
+            "states": [{"id": FIRST_STATE, "exercise_id": FIRST, "label": "First"},
+                       {"id": SECOND_STATE, "exercise_id": SECOND, "label": "Second"}],
+            "transitions": [{"id": "go", "from": FIRST_STATE, "to": SECOND_STATE, "label": "go"},
+                            {"id": "back", "from": SECOND_STATE, "to": FIRST_STATE, "label": "back"}]}
 
 
 class ChoreographyRun(OfflineCase):
@@ -92,7 +97,7 @@ class ChoreographyRun(OfflineCase):
         self.assertEqual(result.status_code, 202)
         self.assertEqual(result.json["status"], "performing")
         run = self.wait_status(self.run_id, "waiting")
-        self.assertEqual(run["state_id"], FIRST)
+        self.assertEqual(run["state_id"], FIRST_STATE)
         self.assertEqual([t["id"] for t in run["outgoing_transitions"]], ["go"])
         self.assertEqual(run["playback"]["repetitions"], 2)
         self.assertEqual(self.calls, [("voice", {"text": FIRST}), ("pose", [1]), ("pose", [0])] * 2)
@@ -106,16 +111,16 @@ class ChoreographyRun(OfflineCase):
         self.assertEqual(wrong.status_code, 409)
         self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "missing"}).status_code, 409)
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.client.get(f"/run/{self.run_id}").json["state_id"], FIRST)
-        direct = self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND})
-        self.assertEqual((direct.status_code, direct.json["state_id"]), (200, SECOND))
+        self.assertEqual(self.client.get(f"/run/{self.run_id}").json["state_id"], FIRST_STATE)
+        direct = self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND_STATE})
+        self.assertEqual((direct.status_code, direct.json["state_id"]), (200, SECOND_STATE))
         self.assertEqual(direct.json["status"], "waiting")
         self.assertEqual(self.calls, [])
         self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
         accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "back"})
         self.assertEqual(accepted.status_code, 202)
-        self.assertEqual(accepted.json["state_id"], FIRST)
-        self.assertEqual(self.wait_status(self.run_id, "waiting")["state_id"], FIRST)
+        self.assertEqual(accepted.json["state_id"], FIRST_STATE)
+        self.assertEqual(self.wait_status(self.run_id, "waiting")["state_id"], FIRST_STATE)
         self.assertEqual(len(self.calls), 6)
 
     def test_only_one_active_run_and_stop(self):
@@ -280,7 +285,7 @@ class ChoreographyRun(OfflineCase):
             result = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
         self.assertEqual(result.status_code, 503)
         current = self.client.get(f"/run/{self.run_id}").json
-        self.assertEqual((current["state_id"], current["status"]), (FIRST, "waiting"))
+        self.assertEqual((current["state_id"], current["status"]), (FIRST_STATE, "waiting"))
         self.assertTrue(translator.choreography_runs._runs[self.run_id].worker_done.is_set())
         self.assertEqual(self.calls, [])
         self.release_call.assert_not_called()
@@ -328,7 +333,7 @@ class ChoreographyRun(OfflineCase):
             accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
             self.assertEqual(accepted.status_code, 202)
             run = self.wait_status(self.run_id, "waiting")
-        self.assertEqual(run["state_id"], FIRST)
+        self.assertEqual(run["state_id"], FIRST_STATE)
         self.assertIn("robot playback failed", run["error"])
         self.assertEqual(self.calls, [("voice", {"text": SECOND})])
 
@@ -345,7 +350,7 @@ class ChoreographyRun(OfflineCase):
         with patch.object(translator, "request_with_retries", side_effect=unavailable):
             self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 202)
             run = self.wait_status(self.run_id, "waiting")
-        self.assertEqual(run["state_id"], FIRST)
+        self.assertEqual(run["state_id"], FIRST_STATE)
         self.assertIn("failed to fetch frames", run["error"])
         self.assertEqual(self.calls, [])
 
@@ -365,7 +370,7 @@ class ChoreographyRun(OfflineCase):
             self.assertEqual(result.status_code, 202)
             self.assertTrue(entered.wait(3))
             self.assertEqual(self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"}).status_code, 409)
-            self.assertEqual(self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND}).status_code, 409)
+            self.assertEqual(self.client.post(f"/run/{self.run_id}/goto", json={"state_id": SECOND_STATE}).status_code, 409)
             self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
             self.assertEqual(self.start(OTHER).status_code, 409)
             release.set()
@@ -554,7 +559,7 @@ class ChoreographyRun(OfflineCase):
         with patch.object(translator, "call_nao_set_pose", side_effect=slow_pose):
             accepted = self.client.post(f"/run/{self.run_id}/signal", json={"transition_id": "go"})
             self.assertEqual(accepted.status_code, 202)
-            self.assertEqual((accepted.json["state_id"], accepted.json["status"]), (SECOND, "performing"))
+            self.assertEqual((accepted.json["state_id"], accepted.json["status"]), (SECOND_STATE, "performing"))
             self.assertTrue(entered.wait(3))
             self.assertEqual(self.client.post(f"/run/{self.run_id}/stop").status_code, 200)
             self.assertEqual(self.start(OTHER).status_code, 409)
