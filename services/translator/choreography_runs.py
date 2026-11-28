@@ -127,7 +127,10 @@ class ChoreographyRuns:
 
     def _perform_state(self, run, target, starting):
         try:
-            result, failure = self.play(run.run_id, target, run.stop_event.is_set)
+            exercise_id = next(
+                state["exercise_id"] for state in run.graph["states"] if state["id"] == target
+            )
+            result, failure = self.play(run.run_id, exercise_id, run.stop_event.is_set)
         except Exception:
             self.logger.exception("choreography playback failed for run %s", run.run_id)
             result, failure = None, ({"error": "unexpected playback failure"}, 502)
@@ -280,7 +283,7 @@ class ChoreographyRuns:
                 return {"error": "run not found"}, 404
             if run.status != "waiting":
                 return {"error": "run must be waiting before goto"}, 409
-            if state_id not in {s["state_id"] for s in run.graph["states"]}:
+            if state_id not in {s["id"] for s in run.graph["states"]}:
                 return {"error": f"State '{state_id}' not found"}, 404
             run.state_id = state_id
             run.playback = None

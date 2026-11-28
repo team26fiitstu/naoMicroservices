@@ -33,17 +33,17 @@ older timezone-naive values remain valid; new records use UTC ISO 8601.
 generated choreography `id`, `name`, `initial_state`, `states`, `transitions`,
 and generated `created_at` and `updated_at` timestamps.
 
-Each state has a `state_id`, an `exercise_id`, a display `label`, and editor
-coordinates `x` and `y`. `initial_state` and transition `from`/`to` values
-refer to state IDs in the same graph. For compatibility with the current
-playback service, `state_id` must equal `exercise_id`; the latter explicitly
-identifies the exercise played by the state. Both fields and `schema_version`
-are required in requests; missing fields and properties outside the schema are
-rejected. A transition contains only its `id`, `from`, `to`, and `label`; it has
-no conditions or repetition counters. States and transitions are saved as part
-of the whole graph.
+Each state has an independent `id`, an `exercise_id`, a display `label`, and
+editor coordinates `x` and `y`. `initial_state` and transition `from`/`to`
+values refer to state IDs in the same graph. The state `id` is a short string
+such as `s1`; `exercise_id` is a string containing an existing exercise's
+eight-character ID. A transition contains only its `id`, `from`, `to`, and
+`label`; it has no conditions or repetition counters. States and transitions
+are saved as part of the whole graph.
 
-The service validates the complete request against the JSON Schema, then checks
-relationships JSON Schema cannot express: referenced exercises exist, state
-and transition IDs are unique, the initial state belongs to the graph, and
-transition endpoints belong to the graph.
+The service treats a missing `schema_version` in create/update requests or
+stored files as version 1; newly written graphs store the version explicitly.
+It validates the complete request against the JSON Schema, then checks
+relationships JSON Schema cannot express:
+referenced exercises exist, state and transition IDs are unique, the initial
+state belongs to the graph, and transition endpoints belong to the graph.

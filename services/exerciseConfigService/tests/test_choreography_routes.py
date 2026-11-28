@@ -42,13 +42,13 @@ class ChoreographyRoutes(OfflineCase):
     def make_doc(self, state_a, state_b, name="Trening 1"):
         return {
             "name": name,
-            "initial_state": state_a,
+            "initial_state": "s1",
             "states": [
-                {"state_id": state_a, "label": "Pohyb 1", "x": 120, "y": 80},
-                {"state_id": state_b, "label": "Pohyb 2", "x": 120, "y": 240},
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1", "x": 120, "y": 80},
+                {"id": "s2", "exercise_id": state_b, "label": "Pohyb 2", "x": 120, "y": 240},
             ],
             "transitions": [
-                {"id": "t1", "from": state_a, "to": state_b, "label": "Pohyb 1 hotovy"},
+                {"id": "t1", "from": "s1", "to": "s2", "label": "Pohyb 1 hotovy"},
             ],
         }
 
@@ -62,7 +62,7 @@ class ChoreographyRoutes(OfflineCase):
         created = created_resp.json
         choreography_id = created["id"]
         self.assertEqual(created["name"], "Trening 1")
-        self.assertEqual(created["initial_state"], state_a)
+        self.assertEqual(created["initial_state"], "s1")
         self.assertIn("created_at", created)
         self.assertIn("updated_at", created)
         stored_file = self.root / "_choreographies" / f"{choreography_id}.json"
@@ -106,38 +106,38 @@ class ChoreographyRoutes(OfflineCase):
 
         invalid_docs = {
             "unknown exercise ID": {**base_doc, "states": [
-                {"state_id": "deadbeef", "label": "Ghost", "x": 0, "y": 0},
+                {"id": "s1", "exercise_id": "deadbeef", "label": "Ghost", "x": 0, "y": 0},
                 base_doc["states"][1],
             ]},
             "transition to a foreign state": {**base_doc, "transitions": [
-                {"id": "t1", "from": state_a, "to": "deadbeef", "label": "bad"},
+                {"id": "t1", "from": "s1", "to": "deadbeef", "label": "bad"},
             ]},
             "missing initial_state": {**base_doc, "initial_state": None},
             "initial_state not in states": {**base_doc, "initial_state": "deadbeef"},
             "duplicate transition id": {**base_doc, "transitions": [
-                {"id": "t1", "from": state_a, "to": state_b, "label": "a"},
-                {"id": "t1", "from": state_b, "to": state_a, "label": "b"},
+                {"id": "t1", "from": "s1", "to": "s2", "label": "a"},
+                {"id": "t1", "from": "s2", "to": "s1", "label": "b"},
             ]},
-            "duplicate state_id": {**base_doc, "states": [
-                {"state_id": state_a, "label": "Pohyb 1", "x": 0, "y": 0},
-                {"state_id": state_a, "label": "Pohyb 1 again", "x": 10, "y": 10},
+            "duplicate state id": {**base_doc, "states": [
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1", "x": 0, "y": 0},
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1 again", "x": 10, "y": 10},
             ]},
             "missing name": {**base_doc, "name": ""},
             "non-numeric position": {**base_doc, "states": [
-                {"state_id": state_a, "label": "Pohyb 1", "x": "left", "y": 0},
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1", "x": "left", "y": 0},
                 base_doc["states"][1],
             ]},
             "empty states": {**base_doc, "states": []},
-            "path-traversal state_id": {**base_doc, "states": [
-                {"state_id": "../outside", "label": "Escape", "x": 0, "y": 0},
+            "unsafe state id": {**base_doc, "states": [
+                {"id": "../outside", "exercise_id": state_a, "label": "Escape", "x": 0, "y": 0},
                 base_doc["states"][1],
             ]},
             "non-finite x (NaN)": {**base_doc, "states": [
-                {"state_id": state_a, "label": "Pohyb 1", "x": float("nan"), "y": 0},
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1", "x": float("nan"), "y": 0},
                 base_doc["states"][1],
             ]},
             "non-finite y (Infinity)": {**base_doc, "states": [
-                {"state_id": state_a, "label": "Pohyb 1", "x": 0, "y": float("inf")},
+                {"id": "s1", "exercise_id": state_a, "label": "Pohyb 1", "x": 0, "y": float("inf")},
                 base_doc["states"][1],
             ]},
         }
@@ -167,34 +167,25 @@ class ChoreographyRoutes(OfflineCase):
                 )
                 self.assertEqual(self.client.delete(f"/choreography/{choreography_id}").status_code, 404)
 
-    def test_create_ignores_unknown_fields(self):
+    def test_create_rejects_unknown_fields(self):
         state_a = self.create_exercise("Pohyb 1")
         state_b = self.create_exercise("Pohyb 2")
-        doc = {**self.make_doc(state_a, state_b), "extra_field": "should not be stored", "id": "ignored"}
+        doc = {**self.make_doc(state_a, state_b), "extra_field": "not in schema"}
 
-        created = self.client.post("/choreography/create", json=doc).json
-        self.assertNotIn("extra_field", created)
-        self.assertNotEqual(created["id"], "ignored")
+        result = self.client.post("/choreography/create", json=doc)
+        self.assertEqual(result.status_code, 400)
+        self.assertEqual(self.client.get("/choreography/list").json, [])
 
-        on_disk = (self.root / "_choreographies" / f"{created['id']}.json").read_text()
-        self.assertNotIn("extra_field", on_disk)
-
-    def test_create_ignores_unknown_fields_inside_states_and_transitions(self):
-        # Unknown fields must be stripped at every level, not only at the top
-        # of the document.
+    def test_create_rejects_unknown_fields_inside_states_and_transitions(self):
         state_a = self.create_exercise("Pohyb 1")
         state_b = self.create_exercise("Pohyb 2")
         doc = self.make_doc(state_a, state_b)
         doc["states"][0]["extra_state_field"] = "should not be stored"
         doc["transitions"][0]["extra_transition_field"] = "should not be stored"
 
-        created = self.client.post("/choreography/create", json=doc).json
-        self.assertNotIn("extra_state_field", created["states"][0])
-        self.assertNotIn("extra_transition_field", created["transitions"][0])
-
-        on_disk = (self.root / "_choreographies" / f"{created['id']}.json").read_text()
-        self.assertNotIn("extra_state_field", on_disk)
-        self.assertNotIn("extra_transition_field", on_disk)
+        result = self.client.post("/choreography/create", json=doc)
+        self.assertEqual(result.status_code, 400)
+        self.assertEqual(self.client.get("/choreography/list").json, [])
 
     def test_malformed_document_in_choreographies_dir_does_not_break_listing_or_delete(self):
         state_a = self.create_exercise("Pohyb 1")
@@ -223,7 +214,7 @@ class ChoreographyRoutes(OfflineCase):
         state_a = self.create_exercise("Pohyb 1")
         state_b = self.create_exercise("Pohyb 2")
         doc = self.make_doc(state_a, state_b)
-        doc["transitions"].append({"id": "t2", "from": state_a, "to": state_a, "label": "Retry"})
+        doc["transitions"].append({"id": "t2", "from": "s1", "to": "s1", "label": "Retry"})
 
         result = self.client.post("/choreography/create", json=doc)
         self.assertEqual(result.status_code, 201)

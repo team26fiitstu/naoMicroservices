@@ -6,7 +6,7 @@ and connects them with transitions. It is stored as its own JSON file,
 separate from any single exercise, inside EXERCISES_DIR:
 
   /service/exercises/
-  ├── a3f9c1d2/                  ← exercise (state), unaffected
+  ├── a3f9c1d2/                  ← exercise referenced by a graph state
   └── _choreographies/
       ├── c1d2e3f4.json
       └── b7e2a091.json
@@ -19,13 +19,13 @@ Choreography document:
     "schema_version": 1,
     "id": "c1d2e3f4",
     "name": "Trening 1",
-    "initial_state": "da48eac8",
+    "initial_state": "s1",
     "states": [
-      {"state_id": "da48eac8", "exercise_id": "da48eac8",
-       "label": "Pohyb 1", "x": 120, "y": 80}
+      {"id": "s1", "exercise_id": "da48eac8", "label": "Pohyb 1", "x": 120, "y": 80},
+      {"id": "s2", "exercise_id": "a3f9c1d2", "label": "Pohyb 2", "x": 120, "y": 240}
     ],
     "transitions": [
-      {"id": "t1", "from": "da48eac8", "to": "a3f9c1d2", "label": "Pohyb 1 hotovy"}
+      {"id": "t1", "from": "s1", "to": "s2", "label": "Pohyb 1 hotovy"}
     ],
     "created_at": "...",
     "updated_at": "..."
@@ -172,25 +172,23 @@ def validate_choreography(doc) -> list:
     if not isinstance(doc, dict):
         return ["document must be a JSON object"]
 
-    errors = _schema_errors(doc, CHOREOGRAPHY_INPUT_VALIDATOR)
+    request_doc = dict(doc)
+    request_doc.setdefault("schema_version", 1)
+    errors = _schema_errors(request_doc, CHOREOGRAPHY_INPUT_VALIDATOR)
     if errors:
         return errors
-    graph = _sanitize_doc(doc)
+    graph = _sanitize_doc(request_doc)
     if not graph["name"].strip():
         errors.append("name must not be blank")
 
     states = graph["states"]
     state_ids = set()
     for state in states:
-        state_id = state["state_id"]
+        state_id = state["id"]
         exercise_id = state["exercise_id"]
         if state_id in state_ids:
             errors.append(f"duplicate state ID '{state_id}'")
         state_ids.add(state_id)
-        if exercise_id != state_id:
-            errors.append(
-                f"state '{state_id}' exercise_id must match state_id for playback compatibility"
-            )
         if not storage.exercise_exists(exercise_id):
             errors.append(f"exercise ID '{exercise_id}' does not reference an existing exercise")
         if not _is_finite_number(state["x"]):
@@ -224,7 +222,7 @@ def validate_choreography(doc) -> list:
 def _sanitize_state(state) -> dict:
     """Keep the state fields defined by the choreography schema."""
     return {
-        "state_id": state["state_id"],
+        "id": state["id"],
         "exercise_id": state["exercise_id"],
         "label": state["label"],
         "x": state["x"],
@@ -248,7 +246,7 @@ def _sanitize_doc(doc: dict) -> dict:
     Generated metadata is added by create_choreography/replace_choreography.
     """
     return {
-        "schema_version": doc["schema_version"],
+        "schema_version": doc.get("schema_version", 1),
         "name": doc["name"],
         "initial_state": doc["initial_state"],
         "states": [_sanitize_state(state) for state in doc["states"]],
@@ -278,7 +276,10 @@ def create_choreography(doc: dict) -> dict:
 def get_choreography(choreography_id: str) -> dict:
     if not choreography_exists(choreography_id):
         raise FileNotFoundError(f"Choreography '{choreography_id}' not found")
-    return _read_json(choreography_path(choreography_id))
+    doc = _read_json(choreography_path(choreography_id))
+    if isinstance(doc, dict):
+        doc.setdefault("schema_version", 1)
+    return doc
 
 
 def replace_choreography(choreography_id: str, doc: dict) -> dict:

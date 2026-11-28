@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://naomi.local/schemas/choreography.schema.json",
   "title": "NAOMI choreography",
-  "description": "A graph whose states reference existing exercise IDs.",
+  "description": "A graph of independently identified states that reference exercises.",
   "type": "object",
   "required": [
     "schema_version",
@@ -28,7 +28,7 @@
       "minLength": 1
     },
     "initial_state": {
-      "$ref": "#/$defs/id",
+      "$ref": "#/$defs/stateId",
       "description": "ID of one state in this choreography."
     },
     "states": {
@@ -58,18 +58,24 @@
     "id": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}$",
-      "description": "An eight-character exercise or choreography ID."
+      "description": "An eight-character choreography ID."
+    },
+    "stateId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "description": "A state ID chosen within the choreography."
     },
     "state": {
       "type": "object",
-      "required": ["state_id", "exercise_id", "label", "x", "y"],
+      "required": ["id", "exercise_id", "label", "x", "y"],
       "properties": {
-        "state_id": {
-          "$ref": "#/$defs/id",
+        "id": {
+          "$ref": "#/$defs/stateId",
           "description": "ID used to identify this state in the graph."
         },
         "exercise_id": {
-          "$ref": "#/$defs/id",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$",
           "description": "ID of the exercise played by this state."
         },
         "label": {
@@ -94,11 +100,11 @@
           "minLength": 1
         },
         "from": {
-          "$ref": "#/$defs/id",
+          "$ref": "#/$defs/stateId",
           "description": "ID of a state in this choreography."
         },
         "to": {
-          "$ref": "#/$defs/id",
+          "$ref": "#/$defs/stateId",
           "description": "ID of a state in this choreography."
         },
         "label": {
