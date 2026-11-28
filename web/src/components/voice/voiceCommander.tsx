@@ -7,6 +7,7 @@ import { MicButton } from "@/components/voice/micButton";
 import { POSE_LABELS, poseLabel, findPoses } from "@/lib/poses";
 import { pluralSk } from "@/lib/plural";
 import { api } from "@/lib/api";
+import { robotCommandFailureText } from "@/lib/errors";
 import { useSpeechRecognition, SPEECH_UNSUPPORTED } from "@/hooks/useSpeechRecognition";
 import { TranscriptBlock } from "@/components/voice/transcriptBlock";
 import { askLlm, LLM_AVAILABLE } from "@/lib/llm";
@@ -90,7 +91,7 @@ export function VoiceCommander() {
         setQueue((prev) =>
           prev.map((item, idx) =>
             idx === i
-              ? { ...item, status: "error", error: err instanceof Error ? err.message : "Neznáma chyba" }
+              ? { ...item, status: "error", error: robotCommandFailureText("Vykonanie príkazu zlyhalo", err) }
               : item
           )
         );
@@ -168,8 +169,8 @@ export function VoiceCommander() {
                   {item.status === "pending" ? "čaká" : item.status === "running" ? "odosiela…" : item.status === "done" ? "hotovo" : "chyba"}
                 </span>
                 {item.error && (
-                  <span className="text-xs text-destructive truncate max-w-[120px]" title={item.error}>
-                    {item.error}
+                  <span className="text-xs text-destructive text-right break-words max-w-[240px]" title={item.error}>
+                  {item.error}
                   </span>
                 )}
               </div>
