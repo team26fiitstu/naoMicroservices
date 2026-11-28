@@ -2,9 +2,10 @@ import { ArrowRight, Film, Flag, FolderOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExerciseNameInput } from "@/components/exercise/exerciseNameInput";
+import { MetaItem, MetaRow } from "@/components/ui/meta";
 import { NameInput } from "@/components/ui/nameInput";
 import { EXERCISE_SOURCES } from "@/components/exercise/exerciseSources";
-import type { Choreography, GraphSelection } from "@/lib/choreography";
+import { stateLabel, type Choreography, type GraphSelection } from "@/lib/choreography";
 import type { ExerciseSummary } from "@/lib/exercises";
 import { pluralSk } from "@/lib/plural";
 
@@ -20,11 +21,10 @@ type Props = {
   onRemove: (stateId: string) => void;
 };
 
-// Side panel with everything about selected state or transition, graph shows only labels
+// side panel with everything about selected state or transition, graph shows only labels
 export function GraphInspector({ graph, selection, exercises, onRename, onRenameTransition, onOpen, onSetInitial, onRemove }: Props) {
   const state = selection?.kind === "state" ? graph.states.find((s) => s.state_id === selection.id) : undefined;
   const transition = selection?.kind === "transition" ? graph.transitions.find((t) => t.id === selection.id) : undefined;
-  const stateLabel = (stateId: string) => graph.states.find((s) => s.state_id === stateId)?.label ?? stateId;
 
   if (state) {
     const exercise = exercises.get(state.state_id);
@@ -34,19 +34,11 @@ export function GraphInspector({ graph, selection, exercises, onRename, onRename
       <Card className="gap-4 px-5 py-4">
         <div className="space-y-2">
           <ExerciseNameInput name={exercise?.name ?? state.label} onRename={(name) => onRename(state.state_id, name)} />
-          {exercise && source && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <source.icon className="h-3.5 w-3.5" />
-                {source.label}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Film className="h-3.5 w-3.5" />
-                {exercise.frame_count} {pluralSk(exercise.frame_count, "snímka", "snímky", "snímok")}
-              </span>
-            </div>
-          )}
-          {initial && <p className="text-xs text-muted-foreground">Počiatočný stav choreografie.</p>}
+          <MetaRow>
+            {source && <MetaItem icon={source.icon}>{source.label}</MetaItem>}
+            {exercise?.source === "video" && <MetaItem icon={Film}>{exercise.frame_count} {pluralSk(exercise.frame_count, "snímka", "snímky", "snímok")}</MetaItem>}
+            {initial && <MetaItem icon={Flag}>Počiatočný</MetaItem>}
+          </MetaRow>
         </div>
         <div className="flex flex-col gap-2">
           <Button size="sm" variant="outline" onClick={() => onOpen(state.state_id)}>
@@ -78,9 +70,9 @@ export function GraphInspector({ graph, selection, exercises, onRename, onRename
       <Card className="gap-2 px-5 py-4">
         <NameInput name={transition.label} label="Názov prechodu" onRename={(label) => onRenameTransition(transition.id, label)} />
         <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {stateLabel(transition.from)}
+          {stateLabel(graph, transition.from)}
           <ArrowRight className="h-3.5 w-3.5" />
-          {stateLabel(transition.to)}
+          {stateLabel(graph, transition.to)}
         </p>
       </Card>
     );

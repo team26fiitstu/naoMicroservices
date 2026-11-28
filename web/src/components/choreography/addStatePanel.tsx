@@ -19,7 +19,7 @@ type Props = {
   onClose: () => void;
 };
 
-// New state from saved exercise, or from new video or image like in upload page
+// new state from saved exercise, or from new video or image like in upload page
 export function AddStatePanel({ exercises, onAddExisting, onAddNew, onError, onReject, onClose }: Props) {
   const [exerciseId, setExerciseId] = useState("");
   const [uploading, setUploading] = useState(false);

@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirmDialog";
 import { EmptyState } from "@/components/ui/emptyState";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loadingState";
+import { MetaItem, MetaRow } from "@/components/ui/meta";
 import { NameInput } from "@/components/ui/nameInput";
 import { StatusAlert } from "@/components/ui/statusAlert";
 import { ExerciseSelect } from "@/components/exercise/exerciseSelect";
@@ -96,16 +97,10 @@ export default function ChoreographiesPage() {
         <Card key={c.id} className="flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start">
           <div className="min-w-0 flex-1 space-y-1.5">
             <NameInput name={c.name} label="Názov choreografie" onRename={(name) => rename(c.id, name)} className="w-full max-w-sm" />
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <Workflow className="h-3.5 w-3.5" />
-                {c.state_count} {pluralSk(c.state_count, "stav", "stavy", "stavov")}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                {formatDateTime(c.updated_at)}
-              </span>
-            </div>
+            <MetaRow>
+              <MetaItem icon={Workflow}>{c.state_count} {pluralSk(c.state_count, "stav", "stavy", "stavov")}</MetaItem>
+              <MetaItem icon={CalendarDays}>{formatDateTime(c.updated_at)}</MetaItem>
+            </MetaRow>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => navigate(`/choreographies/${c.id}`)}>
@@ -145,7 +140,7 @@ type CreateFormProps = {
   onError: (action: string, err: unknown) => void;
 };
 
-// Graph needs at least one state, chosen exercise becomes initial state
+// graph needs at least one state, chosen exercise becomes initial state
 function CreateForm({ onCancel, onCreated, onError }: CreateFormProps) {
   const [exercises, setExercises] = useState<ExerciseSummary[]>([]);
   const [name, setName] = useState("");

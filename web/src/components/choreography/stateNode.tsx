@@ -1,12 +1,14 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Loader2 } from "lucide-react";
 import { EXERCISE_SOURCES } from "@/components/exercise/exerciseSources";
 import type { ExerciseSource } from "@/lib/exercises";
 import { cn } from "@/lib/utils";
 
-type StateNodeData = { label: string; initial: boolean; source?: ExerciseSource };
+// running on all states during run, run only on current one
+type StateNodeData = { label: string; initial: boolean; source?: ExerciseSource; running: boolean; run?: "performing" | "waiting" };
 export type StateFlowNode = Node<StateNodeData, "state">;
 
-// State label with type icon, details in side panel
+// state label with type icon, details in side panel
 export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
   const source = data.source && EXERCISE_SOURCES[data.source];
   return (
@@ -14,14 +16,16 @@ export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
       className={cn(
         "relative w-44 rounded-base border px-3 py-2.5 shadow-sm",
         // tints mixed with card color so canvas dots don't show through
-        selected
+        data.run
+          ? "border-success bg-[color-mix(in_oklab,var(--success)_12%,var(--card))]"
+          : selected
           ? "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]"
           : data.initial ? "border-foreground bg-[color-mix(in_oklab,var(--foreground)_6%,var(--card))]" : "bg-card",
       )}
     >
       {data.initial && (
-        // start arrow drawn like transition edges: 1px line, filled 7px head
-        <svg width="28" height="10" viewBox="0 0 28 10" className="absolute -left-8 top-1/2 -translate-y-1/2">
+        // start arrow drawn like transition edges, dimmed during run like them, head touches border
+        <svg width="28" height="10" viewBox="0 0 28 10" className={cn("absolute -left-7 top-1/2 -translate-y-1/2", data.running && "opacity-35")}>
           <line x1="0" y1="5" x2="21" y2="5" className="stroke-muted-foreground" strokeWidth={1} />
           <path d="M21 1.5 L28 5 L21 8.5 z" className="fill-muted-foreground" />
         </svg>
@@ -29,6 +33,7 @@ export function StateNode({ data, selected }: NodeProps<StateFlowNode>) {
       <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {source && <source.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={source.label} />}
         <span className="truncate">{data.label}</span>
+        {data.run === "performing" && <Loader2 className="ml-auto h-3.5 w-3.5 shrink-0 animate-spin text-success" aria-label="Vykonáva sa" />}
       </p>
       {/* edges compute their own ends, handles only anchor them */}
       {/* NOTE (SCRUM-96): to draw transitions make these handles connectable, set nodesConnectable and onConnect in GraphCanvas, add addTransition to useChoreography

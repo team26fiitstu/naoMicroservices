@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 
-// State is saved exercise placed in graph, x and y only for editor
+// state is saved exercise placed in graph, x and y only for editor
 export type ChoreographyState = { state_id: string; label: string; x: number; y: number };
 type Transition = { id: string; from: string; to: string; label: string };
 
@@ -16,13 +16,13 @@ export type Choreography = {
 
 export type ChoreographySummary = Pick<Choreography, "id" | "name" | "created_at" | "updated_at"> & { state_count: number };
 
-// What side panel shows, transitions selectable for transition editing
+// what side panel shows, transitions selectable for transition editing
 export type GraphSelection = { kind: "state" | "transition"; id: string } | null;
 
 const GRID_COLUMNS = 4;
 const GRID_STEP = { x: 240, y: 120 };
 
-// First grid cell no state is near, so new state does not cover moved or remaining ones
+// first grid cell no state is near, so new state does not cover moved or remaining ones
 export function nextStatePosition(states: ChoreographyState[]) {
   const taken = (x: number, y: number) =>
     states.some((s) => Math.abs(s.x - x) < GRID_STEP.x && Math.abs(s.y - y) < GRID_STEP.y);
@@ -34,6 +34,10 @@ export function nextStatePosition(states: ChoreographyState[]) {
 }
 
 type GraphFields = Pick<Choreography, "name" | "initial_state" | "states" | "transitions">;
+
+// label of state by id, id itself when state is gone
+export const stateLabel = (graph: Choreography, stateId: string) =>
+  graph.states.find((s) => s.state_id === stateId)?.label ?? stateId;
 
 export const listChoreographies = () => api<ChoreographySummary[]>("/choreography/list");
 

@@ -5,7 +5,7 @@ import { exerciseDisplayName } from "@/lib/exerciseName";
 import { failureText } from "@/lib/errors";
 import { useStatus } from "@/hooks/useStatus";
 
-// State label mirrors exercise name, null when all labels already match
+// state label mirrors exercise name, null when all labels already match
 function syncLabels(graph: Choreography, exercises: ExerciseSummary[]): Choreography | null {
   const names = new Map(exercises.map((e) => [e.id, exerciseDisplayName(e.name)]));
   const states = graph.states.map((s) => {
@@ -15,7 +15,7 @@ function syncLabels(graph: Choreography, exercises: ExerciseSummary[]): Choreogr
   return states.some((s, i) => s !== graph.states[i]) ? { ...graph, states } : null;
 }
 
-// Choreography graph with its exercises, every change saved as whole graph
+// choreography graph with its exercises, every change saved as whole graph
 export function useChoreography(id: string) {
   const [graph, setGraph] = useState<Choreography | null>(null);
   const [exercises, setExercises] = useState<ExerciseSummary[]>([]);

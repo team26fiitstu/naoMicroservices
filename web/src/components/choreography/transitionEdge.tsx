@@ -1,7 +1,9 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type Edge, type EdgeProps, type InternalNode } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 
-type TransitionEdgeData = { label: string; curved: boolean; marker: string; selectedMarker: string };
+export type EdgeMarkers = { plain: string; selected: string; next: string };
+// run: next for transitions out of current state, dimmed for other ones
+type TransitionEdgeData = { label: string; curved: boolean; markers: EdgeMarkers; run?: "next" | "dimmed" };
 export type TransitionFlowEdge = Edge<TransitionEdgeData, "transition">;
 
 type Point = { x: number; y: number };
@@ -9,7 +11,7 @@ type Point = { x: number; y: number };
 const BEND = 40;
 const LOOP_HEIGHT = 56;
 
-// Arrow from node border to node border, opposite transitions bend apart, self transition loops above node
+// arrow from node border to node border, opposite transitions bend apart, self transition loops above node
 export function TransitionEdge({ id, source, target, data, selected }: EdgeProps<TransitionFlowEdge>) {
   const from = useInternalNode(source);
   const to = useInternalNode(target);
@@ -35,13 +37,21 @@ export function TransitionEdge({ id, source, target, data, selected }: EdgeProps
 
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={`url(#${selected ? data.selectedMarker : data.marker})`} interactionWidth={16} />
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={`url(#${data.run === "next" ? data.markers.next : selected ? data.markers.selected : data.markers.plain})`}
+        style={data.run === "next" ? { stroke: "var(--success)" } : data.run === "dimmed" ? { opacity: 0.35 } : undefined}
+        interactionWidth={16}
+      />
       <EdgeLabelRenderer>
         <div
           style={{ transform: `translate(-50%, -50%) translate(${label.x}px, ${label.y}px)` }}
           className={cn(
             "pointer-events-none absolute max-w-40 truncate rounded-base border bg-card px-1.5 py-0.5 text-[11px] text-foreground shadow-sm",
-            selected && "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]",
+            data.run === "next" && "border-success bg-[color-mix(in_oklab,var(--success)_12%,var(--card))]",
+            data.run === "dimmed" && "opacity-35",
+            !data.run && selected && "border-info bg-[color-mix(in_oklab,var(--info)_12%,var(--card))]",
           )}
         >
           {data.label}
