@@ -3,3 +3,4 @@ flask_cors==6.0.5
 gunicorn==22.0.0
 requests==2.32.3
 python-dotenv==0.17.1
+jsonschema==4.26.0

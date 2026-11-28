@@ -4,6 +4,7 @@ import math
 import requests
 from flask import Blueprint, request, jsonify, send_file
 import io
+from jsonschema import ValidationError
 
 from app.storage import (
     exercise_exists,
@@ -111,14 +112,17 @@ def create():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    config = create_exercise(
-        name=name,
-        frames=frames,
-        pose_engine=pose_engine,
-        media_bytes=media_bytes,
-        media_ext=media_ext,
-        video_range=video_range,
-    )
+    try:
+        config = create_exercise(
+            name=name,
+            frames=frames,
+            pose_engine=pose_engine,
+            media_bytes=media_bytes,
+            media_ext=media_ext,
+            video_range=video_range,
+        )
+    except ValidationError as e:
+        return jsonify({"error": "invalid exercise config", "detail": e.message}), 400
     return jsonify(config), 201
 
 
@@ -185,7 +189,10 @@ def patch_config(exercise_id):
     if description is not None:
         description = str(description)[:500]
 
-    cfg = update_config(exercise_id, name=name, repetitions=repetitions, calories=calories, description=description)
+    try:
+        cfg = update_config(exercise_id, name=name, repetitions=repetitions, calories=calories, description=description)
+    except ValidationError as e:
+        return jsonify({"error": "invalid exercise config", "detail": e.message}), 400
     return jsonify(cfg), 200
 
 
@@ -225,6 +232,8 @@ def patch_sequence(exercise_id):
         cfg = update_sequence(exercise_id, seq)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except ValidationError as e:
+        return jsonify({"error": "invalid exercise config", "detail": e.message}), 400
     return jsonify(cfg), 200
 
 
